@@ -33,4 +33,18 @@ describe('buildChunkGeometryData', () => {
     expect(data.colors).toHaveLength(72)
     expect(data.indices).toHaveLength(36)
   })
+
+  it('culls the shared face between two adjacent solid voxels', () => {
+    const chunk = new Chunk()
+    chunk.set(0, 0, 0, 1)
+    chunk.set(1, 0, 0, 2)
+
+    const data = buildChunkGeometryData(chunk)
+
+    expect(data.solidCount).toBe(2)
+    expect(data.faceCount).toBe(10)
+    expect(data.vertexCount).toBe(40)
+    expect(data.indexCount).toBe(60)
+    expect(data.triangleCount).toBe(20)
+  })
 })

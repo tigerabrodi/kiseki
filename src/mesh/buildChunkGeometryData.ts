@@ -8,11 +8,13 @@ type Vec3 = readonly [number, number, number]
 
 type FaceDefinition = {
   corners: readonly [Vec3, Vec3, Vec3, Vec3]
+  neighborOffset: Vec3
   normal: Vec3
 }
 
 const FACE_DEFINITIONS: ReadonlyArray<FaceDefinition> = [
   {
+    neighborOffset: [1, 0, 0],
     normal: [1, 0, 0],
     corners: [
       [1, 0, 1],
@@ -22,6 +24,7 @@ const FACE_DEFINITIONS: ReadonlyArray<FaceDefinition> = [
     ],
   },
   {
+    neighborOffset: [-1, 0, 0],
     normal: [-1, 0, 0],
     corners: [
       [0, 0, 0],
@@ -31,6 +34,7 @@ const FACE_DEFINITIONS: ReadonlyArray<FaceDefinition> = [
     ],
   },
   {
+    neighborOffset: [0, 1, 0],
     normal: [0, 1, 0],
     corners: [
       [0, 1, 1],
@@ -40,6 +44,7 @@ const FACE_DEFINITIONS: ReadonlyArray<FaceDefinition> = [
     ],
   },
   {
+    neighborOffset: [0, -1, 0],
     normal: [0, -1, 0],
     corners: [
       [0, 0, 0],
@@ -49,6 +54,7 @@ const FACE_DEFINITIONS: ReadonlyArray<FaceDefinition> = [
     ],
   },
   {
+    neighborOffset: [0, 0, 1],
     normal: [0, 0, 1],
     corners: [
       [0, 0, 1],
@@ -58,6 +64,7 @@ const FACE_DEFINITIONS: ReadonlyArray<FaceDefinition> = [
     ],
   },
   {
+    neighborOffset: [0, 0, -1],
     normal: [0, 0, -1],
     corners: [
       [1, 0, 0],
@@ -92,8 +99,28 @@ function getColor(materialId: number): Vec3 {
   return MATERIAL_COLORS.get(materialId) ?? [1, 1, 1]
 }
 
+function isInBounds(x: number, y: number, z: number): boolean {
+  return (
+    x >= 0 &&
+    x < CHUNK_SIZE &&
+    y >= 0 &&
+    y < CHUNK_SIZE &&
+    z >= 0 &&
+    z < CHUNK_SIZE
+  )
+}
+
+function isSolid(chunk: Chunk, x: number, y: number, z: number): boolean {
+  if (!isInBounds(x, y, z)) {
+    return false
+  }
+
+  return chunk.get(x, y, z) !== 0
+}
+
 export function buildChunkGeometryData(chunk: Chunk): ChunkGeometryData {
   let solidCount = 0
+  let faceCount = 0
 
   for (const voxel of chunk.voxels) {
     if (voxel !== 0) {
@@ -101,7 +128,26 @@ export function buildChunkGeometryData(chunk: Chunk): ChunkGeometryData {
     }
   }
 
-  const faceCount = solidCount * FACE_DEFINITIONS.length
+  for (let z = 0; z < CHUNK_SIZE; z += 1) {
+    for (let y = 0; y < CHUNK_SIZE; y += 1) {
+      for (let x = 0; x < CHUNK_SIZE; x += 1) {
+        if (!isSolid(chunk, x, y, z)) {
+          continue
+        }
+
+        for (const face of FACE_DEFINITIONS) {
+          const neighborX = x + face.neighborOffset[0]
+          const neighborY = y + face.neighborOffset[1]
+          const neighborZ = z + face.neighborOffset[2]
+
+          if (!isSolid(chunk, neighborX, neighborY, neighborZ)) {
+            faceCount += 1
+          }
+        }
+      }
+    }
+  }
+
   const vertexCount = faceCount * FACE_VERTEX_COUNT
   const indexCount = faceCount * FACE_INDEX_COUNT
 
@@ -128,6 +174,14 @@ export function buildChunkGeometryData(chunk: Chunk): ChunkGeometryData {
         const color = getColor(materialId)
 
         for (const face of FACE_DEFINITIONS) {
+          const neighborX = x + face.neighborOffset[0]
+          const neighborY = y + face.neighborOffset[1]
+          const neighborZ = z + face.neighborOffset[2]
+
+          if (isSolid(chunk, neighborX, neighborY, neighborZ)) {
+            continue
+          }
+
           const baseVertex = vertexOffset
 
           for (const corner of face.corners) {

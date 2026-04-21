@@ -40,10 +40,10 @@ export async function startDebugWorld(
   root.innerHTML = `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Step 4</p>
-        <h1 class="title">Custom Chunk Geometry</h1>
+        <p class="eyebrow">Kiseki / Step 5</p>
+        <h1 class="title">Face Culling</h1>
         <p class="subtitle">
-          One BufferGeometry per chunk, with positions, normals, and indices written by hand.
+          Shared faces between solid voxels are skipped, while chunk edges still treat out-of-bounds as air.
         </p>
         <dl class="stats">
           <div class="stats-card">
@@ -55,25 +55,39 @@ export async function startDebugWorld(
             <dd data-solid-count>0</dd>
           </div>
           <div class="stats-card">
+            <dt>Visible Faces</dt>
+            <dd data-face-count>0</dd>
+          </div>
+          <div class="stats-card">
+            <dt>Triangles</dt>
+            <dd data-triangle-count>0</dd>
+          </div>
+          <div class="stats-card">
             <dt>Draw Calls</dt>
             <dd data-draw-calls>0</dd>
           </div>
         </dl>
       </div>
       <div class="viewport" data-viewport></div>
-      <p class="footnote">Still emitting all six faces. Face culling lands in step 5.</p>
+      <p class="footnote">Chunk boundaries still count as air. Neighbor-aware meshing lands in step 9.</p>
     </main>
   `
 
   const viewport = root.querySelector<HTMLElement>('[data-viewport]')
   const statusValue = root.querySelector<HTMLElement>('[data-status]')
   const solidCountValue = root.querySelector<HTMLElement>('[data-solid-count]')
+  const faceCountValue = root.querySelector<HTMLElement>('[data-face-count]')
+  const triangleCountValue = root.querySelector<HTMLElement>(
+    '[data-triangle-count]'
+  )
   const drawCallsValue = root.querySelector<HTMLElement>('[data-draw-calls]')
 
   if (
     viewport === null ||
     statusValue === null ||
     solidCountValue === null ||
+    faceCountValue === null ||
+    triangleCountValue === null ||
     drawCallsValue === null
   ) {
     throw new Error('Failed to mount debug world UI')
@@ -108,7 +122,8 @@ export async function startDebugWorld(
   fillLight.position.set(-10, 8, -12)
   scene.add(fillLight)
 
-  const { drawCalls, mesh, solidCount } = createChunkMesh(createDebugChunk())
+  const { drawCalls, faceCount, mesh, solidCount, triangleCount } =
+    createChunkMesh(createDebugChunk())
 
   mesh.updateMatrixWorld(true)
 
@@ -120,6 +135,8 @@ export async function startDebugWorld(
   scene.add(mesh)
 
   solidCountValue.textContent = solidCount.toString()
+  faceCountValue.textContent = faceCount.toString()
+  triangleCountValue.textContent = triangleCount.toString()
   drawCallsValue.textContent = drawCalls.toString()
 
   const target = new THREE.Vector3(0, Math.max(size.y * 0.35, 1.5), 0)

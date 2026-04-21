@@ -5,6 +5,7 @@ import { buildChunkGeometryData } from './buildChunkGeometryData.ts'
 
 export type ChunkMesh = {
   drawCalls: number
+  faceCount: number
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>
   solidCount: number
   triangleCount: number
@@ -35,6 +36,7 @@ export function createChunkMesh(chunk: Chunk): ChunkMesh {
 
   return {
     drawCalls: data.solidCount > 0 ? 1 : 0,
+    faceCount: data.faceCount,
     mesh: new THREE.Mesh(geometry, material),
     solidCount: data.solidCount,
     triangleCount: data.triangleCount,
