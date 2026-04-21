@@ -1,0 +1,129 @@
+{
+  "version": 2,
+  "format": "ktx2_array",
+  "cellSize": 512,
+  "layerCount": 40,
+  "mipmaps": true,
+  "materials": {
+    "stone": {
+      "layer": 0
+    },
+    "cobblestone": {
+      "layer": 1
+    },
+    "granite": {
+      "layer": 2
+    },
+    "andesite": {
+      "layer": 3
+    },
+    "dirt": {
+      "layer": 4
+    },
+    "grass_top": {
+      "layer": 5
+    },
+    "grass_side": {
+      "layer": 6
+    },
+    "sand": {
+      "layer": 7
+    },
+    "gravel": {
+      "layer": 8
+    },
+    "clay": {
+      "layer": 9
+    },
+    "snow": {
+      "layer": 10
+    },
+    "ice": {
+      "layer": 11
+    },
+    "mud": {
+      "layer": 12
+    },
+    "moss": {
+      "layer": 13
+    },
+    "bedrock": {
+      "layer": 14
+    },
+    "oak_log_side": {
+      "layer": 15
+    },
+    "oak_log_top": {
+      "layer": 16
+    },
+    "oak_planks": {
+      "layer": 17
+    },
+    "birch_log_side": {
+      "layer": 18
+    },
+    "birch_planks": {
+      "layer": 19
+    },
+    "leaves": {
+      "layer": 20
+    },
+    "pine_needles": {
+      "layer": 21
+    },
+    "bamboo": {
+      "layer": 22
+    },
+    "stone_bricks": {
+      "layer": 23
+    },
+    "mossy_stone_bricks": {
+      "layer": 24
+    },
+    "cracked_stone_bricks": {
+      "layer": 25
+    },
+    "smooth_stone": {
+      "layer": 26
+    },
+    "marble": {
+      "layer": 27
+    },
+    "coal_ore": {
+      "layer": 28
+    },
+    "iron_ore": {
+      "layer": 29
+    },
+    "gold_ore": {
+      "layer": 30
+    },
+    "diamond_ore": {
+      "layer": 31
+    },
+    "copper_ore": {
+      "layer": 32
+    },
+    "lapis_ore": {
+      "layer": 33
+    },
+    "water": {
+      "layer": 34
+    },
+    "lava": {
+      "layer": 35
+    },
+    "glass": {
+      "layer": 36
+    },
+    "metal_plate": {
+      "layer": 37
+    },
+    "brick": {
+      "layer": 38
+    },
+    "obsidian": {
+      "layer": 39
+    }
+  }
+}
