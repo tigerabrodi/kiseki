@@ -1,37 +1,49 @@
 import * as THREE from 'three/webgpu'
 import WebGPU from 'three/addons/capabilities/WebGPU.js'
 
-import { createNaiveChunkMesh } from '../mesh/createNaiveChunkMesh.ts'
+import { createChunkMesh } from '../mesh/createChunkMesh.ts'
 import { createDebugChunk } from '../world/createDebugChunk.ts'
 
 type DebugWorldHandle = () => void
+type DisposableMesh = THREE.Mesh<
+  THREE.BufferGeometry,
+  THREE.Material | Array<THREE.Material>
+>
 
 function disposeMaterial(material: THREE.Material): void {
   material.dispose()
 }
 
-function disposeObject(root: THREE.Object3D): void {
-  root.traverse((child) => {
-    if (child instanceof THREE.Mesh) {
-      child.geometry.dispose()
+function isDisposableMesh(object: THREE.Object3D): object is DisposableMesh {
+  return object instanceof THREE.Mesh
+}
 
-      if (Array.isArray(child.material)) {
-        child.material.forEach(disposeMaterial)
-      } else {
-        disposeMaterial(child.material)
-      }
+function disposeObject(root: THREE.Object3D): void {
+  root.traverse((child: THREE.Object3D) => {
+    if (!isDisposableMesh(child)) {
+      return
+    }
+
+    child.geometry.dispose()
+
+    if (Array.isArray(child.material)) {
+      child.material.forEach(disposeMaterial)
+    } else {
+      disposeMaterial(child.material)
     }
   })
 }
 
-export async function startDebugWorld(root: HTMLElement): Promise<DebugWorldHandle> {
+export async function startDebugWorld(
+  root: HTMLElement
+): Promise<DebugWorldHandle> {
   root.innerHTML = `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Step 3</p>
-        <h1 class="title">Naive Debug Mesh</h1>
+        <p class="eyebrow">Kiseki / Step 4</p>
+        <h1 class="title">Custom Chunk Geometry</h1>
         <p class="subtitle">
-          One cube per solid voxel so we can trust chunk data before the custom geometry pass.
+          One BufferGeometry per chunk, with positions, normals, and indices written by hand.
         </p>
         <dl class="stats">
           <div class="stats-card">
@@ -49,7 +61,7 @@ export async function startDebugWorld(root: HTMLElement): Promise<DebugWorldHand
         </dl>
       </div>
       <div class="viewport" data-viewport></div>
-      <p class="footnote">Auto-orbit for now. Fly camera lands in step 7.</p>
+      <p class="footnote">Still emitting all six faces. Face culling lands in step 5.</p>
     </main>
   `
 
@@ -96,16 +108,16 @@ export async function startDebugWorld(root: HTMLElement): Promise<DebugWorldHand
   fillLight.position.set(-10, 8, -12)
   scene.add(fillLight)
 
-  const { drawCalls, group, solidCount } = createNaiveChunkMesh(createDebugChunk())
+  const { drawCalls, mesh, solidCount } = createChunkMesh(createDebugChunk())
 
-  group.updateMatrixWorld(true)
+  mesh.updateMatrixWorld(true)
 
-  const bounds = new THREE.Box3().setFromObject(group)
+  const bounds = new THREE.Box3().setFromObject(mesh)
   const center = bounds.getCenter(new THREE.Vector3())
   const size = bounds.getSize(new THREE.Vector3())
 
-  group.position.set(-center.x, -bounds.min.y, -center.z)
-  scene.add(group)
+  mesh.position.set(-center.x, -bounds.min.y, -center.z)
+  scene.add(mesh)
 
   solidCountValue.textContent = solidCount.toString()
   drawCallsValue.textContent = drawCalls.toString()
@@ -134,35 +146,37 @@ export async function startDebugWorld(root: HTMLElement): Promise<DebugWorldHand
     statusValue.textContent = 'Renderer init failed'
     const message = document.createElement('pre')
     message.textContent =
-      error instanceof Error ? error.message : 'Unknown WebGPU initialization error'
+      error instanceof Error
+        ? error.message
+        : 'Unknown WebGPU initialization error'
     viewport.append(message)
 
     window.removeEventListener('resize', resize)
-    renderer.dispose()
+    void renderer.dispose()
 
     return () => {
       root.innerHTML = ''
     }
   }
 
-  renderer.setAnimationLoop(() => {
+  void renderer.setAnimationLoop(() => {
     const elapsed = clock.getElapsedTime() * 0.28
 
     camera.position.set(
       Math.cos(elapsed) * orbitRadius,
       cameraHeight + Math.sin(elapsed * 1.8) * 1.25,
-      Math.sin(elapsed) * orbitRadius,
+      Math.sin(elapsed) * orbitRadius
     )
     camera.lookAt(target)
 
-    renderer.render(scene, camera)
+    void renderer.render(scene, camera)
   })
 
   return () => {
-    renderer.setAnimationLoop(null)
+    void renderer.setAnimationLoop(null)
     window.removeEventListener('resize', resize)
     disposeObject(scene)
-    renderer.dispose()
+    void renderer.dispose()
     root.innerHTML = ''
   }
 }

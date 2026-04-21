@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
-    "format": "prettier --write \"src/**/*.{ts,css,html}\""
+    "format": "prettier --write \"src/**/*.{ts,css,html}\" \"*.{ts,js,json}\""
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -15,7 +15,11 @@
   color: var(--text-soft);
   background:
     radial-gradient(circle at top, rgba(110, 183, 255, 0.14), transparent 32%),
-    radial-gradient(circle at 20% 20%, rgba(245, 159, 98, 0.14), transparent 22%),
+    radial-gradient(
+      circle at 20% 20%,
+      rgba(245, 159, 98, 0.14),
+      transparent 22%
+    ),
     linear-gradient(180deg, #0a1019 0%, var(--bg-deep) 56%, #020308 100%);
   font: 16px/1.5 var(--font-body);
   font-synthesis: none;

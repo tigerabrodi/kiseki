@@ -1,0 +1,36 @@
+import { describe, expect, it } from 'vitest'
+
+import { Chunk } from '../voxel/chunk.ts'
+import { buildChunkGeometryData } from './buildChunkGeometryData.ts'
+
+describe('buildChunkGeometryData', () => {
+  it('returns empty geometry for an empty chunk', () => {
+    const data = buildChunkGeometryData(new Chunk())
+
+    expect(data.solidCount).toBe(0)
+    expect(data.faceCount).toBe(0)
+    expect(data.vertexCount).toBe(0)
+    expect(data.indexCount).toBe(0)
+    expect(data.positions).toHaveLength(0)
+    expect(data.normals).toHaveLength(0)
+    expect(data.colors).toHaveLength(0)
+    expect(data.indices).toHaveLength(0)
+  })
+
+  it('builds 24 verts and 36 indices for one solid voxel', () => {
+    const chunk = new Chunk()
+    chunk.set(0, 0, 0, 1)
+
+    const data = buildChunkGeometryData(chunk)
+
+    expect(data.solidCount).toBe(1)
+    expect(data.faceCount).toBe(6)
+    expect(data.vertexCount).toBe(24)
+    expect(data.indexCount).toBe(36)
+    expect(data.triangleCount).toBe(12)
+    expect(data.positions).toHaveLength(72)
+    expect(data.normals).toHaveLength(72)
+    expect(data.colors).toHaveLength(72)
+    expect(data.indices).toHaveLength(36)
+  })
+})

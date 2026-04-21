@@ -10,7 +10,7 @@ type ChunkCoordinates = {
 function assertInBounds(axis: 'x' | 'y' | 'z', value: number): void {
   if (!Number.isInteger(value) || value < 0 || value >= CHUNK_SIZE) {
     throw new RangeError(
-      `${axis} must be an integer between 0 and ${CHUNK_SIZE - 1}, got ${value}`,
+      `${axis} must be an integer between 0 and ${CHUNK_SIZE - 1}, got ${value}`
     )
   }
 }
@@ -18,7 +18,7 @@ function assertInBounds(axis: 'x' | 'y' | 'z', value: number): void {
 function assertIndexInBounds(index: number): void {
   if (!Number.isInteger(index) || index < 0 || index >= CHUNK_VOLUME) {
     throw new RangeError(
-      `index must be an integer between 0 and ${CHUNK_VOLUME - 1}, got ${index}`,
+      `index must be an integer between 0 and ${CHUNK_VOLUME - 1}, got ${index}`
     )
   }
 }
@@ -52,7 +52,7 @@ export class Chunk {
   set(x: number, y: number, z: number, materialId: number): void {
     if (!Number.isInteger(materialId) || materialId < 0 || materialId > 0xff) {
       throw new RangeError(
-        `materialId must be an integer between 0 and 255, got ${materialId}`,
+        `materialId must be an integer between 0 and 255, got ${materialId}`
       )
     }
 

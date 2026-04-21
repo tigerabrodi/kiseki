@@ -9,7 +9,7 @@ describe('xyz2i', () => {
 
   it('maps the last voxel to index 32767', () => {
     expect(xyz2i(CHUNK_SIZE - 1, CHUNK_SIZE - 1, CHUNK_SIZE - 1)).toBe(
-      CHUNK_VOLUME - 1,
+      CHUNK_VOLUME - 1
     )
   })
 
