@@ -1,6 +1,11 @@
 import * as THREE from 'three/webgpu'
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js'
 import WebGPU from 'three/addons/capabilities/WebGPU.js'
 
+import {
+  getFlyMovementIntent,
+  type FlyInputState,
+} from '../camera/getFlyMovementIntent.ts'
 import { FixedStepLoop } from '../core/FixedStepLoop.ts'
 import { createChunkMesh } from '../mesh/createChunkMesh.ts'
 import { createDebugChunk } from '../world/createDebugChunk.ts'
@@ -13,6 +18,17 @@ type DisposableMesh = THREE.Mesh<
 
 function disposeMaterial(material: THREE.Material): void {
   material.dispose()
+}
+
+function createInputState(): FlyInputState {
+  return {
+    backward: false,
+    down: false,
+    forward: false,
+    left: false,
+    right: false,
+    up: false,
+  }
 }
 
 function isDisposableMesh(object: THREE.Object3D): object is DisposableMesh {
@@ -41,10 +57,10 @@ export async function startDebugWorld(
   root.innerHTML = `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Step 6</p>
-        <h1 class="title">Fixed Update Loop</h1>
+        <p class="eyebrow">Kiseki / Step 7</p>
+        <h1 class="title">Fly Camera</h1>
         <p class="subtitle">
-          Simulation advances at a fixed 60 Hz, while rendering interpolates between the last two update states.
+          Pointer lock handles mouse look, while movement runs through the fixed 60 Hz simulation loop.
         </p>
         <dl class="stats">
           <div class="stats-card">
@@ -52,42 +68,55 @@ export async function startDebugWorld(
             <dd data-status>Checking WebGPU</dd>
           </div>
           <div class="stats-card">
+            <dt>Pointer</dt>
+            <dd data-pointer-state>Unlocked</dd>
+          </div>
+          <div class="stats-card">
             <dt>Fixed Hz</dt>
             <dd data-fixed-rate>60</dd>
           </div>
           <div class="stats-card">
-            <dt>Last Steps</dt>
-            <dd data-step-count>0</dd>
+            <dt>Position</dt>
+            <dd data-position>0, 0, 0</dd>
           </div>
           <div class="stats-card">
-            <dt>Interp Alpha</dt>
-            <dd data-alpha>0.00</dd>
+            <dt>Speed</dt>
+            <dd data-speed>8 u/s</dd>
           </div>
           <div class="stats-card">
             <dt>Draw Calls</dt>
             <dd data-draw-calls>0</dd>
           </div>
         </dl>
+        <button class="lock-button" type="button" data-lock-button>
+          Click To Fly
+        </button>
       </div>
       <div class="viewport" data-viewport></div>
-      <p class="footnote">Auto-orbit is now simulation driven. Fly camera lands in step 7.</p>
+      <p class="footnote">WASD to strafe, Space and Shift for vertical movement, Esc to release the mouse.</p>
     </main>
   `
 
   const viewport = root.querySelector<HTMLElement>('[data-viewport]')
   const statusValue = root.querySelector<HTMLElement>('[data-status]')
+  const pointerStateValue = root.querySelector<HTMLElement>(
+    '[data-pointer-state]'
+  )
   const fixedRateValue = root.querySelector<HTMLElement>('[data-fixed-rate]')
-  const stepCountValue = root.querySelector<HTMLElement>('[data-step-count]')
-  const alphaValue = root.querySelector<HTMLElement>('[data-alpha]')
+  const positionValue = root.querySelector<HTMLElement>('[data-position]')
+  const speedValue = root.querySelector<HTMLElement>('[data-speed]')
   const drawCallsValue = root.querySelector<HTMLElement>('[data-draw-calls]')
+  const lockButton = root.querySelector<HTMLButtonElement>('[data-lock-button]')
 
   if (
     viewport === null ||
     statusValue === null ||
+    pointerStateValue === null ||
     fixedRateValue === null ||
-    stepCountValue === null ||
-    alphaValue === null ||
-    drawCallsValue === null
+    positionValue === null ||
+    speedValue === null ||
+    drawCallsValue === null ||
+    lockButton === null
   ) {
     throw new Error('Failed to mount debug world UI')
   }
@@ -110,6 +139,7 @@ export async function startDebugWorld(
   scene.fog = new THREE.Fog(0x04060b, 18, 42)
 
   const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 200)
+  const movementSpeed = 8
 
   scene.add(new THREE.AmbientLight(0xf4efe4, 1.6))
 
@@ -128,21 +158,93 @@ export async function startDebugWorld(
   const bounds = new THREE.Box3().setFromObject(mesh)
   const center = bounds.getCenter(new THREE.Vector3())
   const size = bounds.getSize(new THREE.Vector3())
+  const flyTarget = new THREE.Vector3(0, Math.max(size.y * 0.35, 1.5), 0)
+  const orbitRadius = Math.max(size.length() * 0.72, 16)
+  const cameraHeight = Math.max(size.y * 1.15, 10)
 
   mesh.position.set(-center.x, -bounds.min.y, -center.z)
   scene.add(mesh)
 
+  const initialPosition = new THREE.Vector3(
+    orbitRadius * 0.74,
+    cameraHeight,
+    orbitRadius * 0.74
+  )
+  camera.position.copy(initialPosition)
+  camera.lookAt(flyTarget)
+
+  const controls = new PointerLockControls(camera, renderer.domElement)
+  controls.pointerSpeed = 0.75
+
+  const inputState = createInputState()
+  const previousCameraPosition = initialPosition.clone()
+  const currentCameraPosition = initialPosition.clone()
+
+  const updatePointerState = (): void => {
+    pointerStateValue.textContent = controls.isLocked ? 'Locked' : 'Unlocked'
+    lockButton.textContent = controls.isLocked
+      ? 'Press Esc To Release'
+      : 'Click To Fly'
+  }
+
+  const onKeyChange =
+    (pressed: boolean) =>
+    (event: KeyboardEvent): void => {
+      switch (event.code) {
+        case 'KeyW':
+          inputState.forward = pressed
+          break
+        case 'KeyS':
+          inputState.backward = pressed
+          break
+        case 'KeyA':
+          inputState.left = pressed
+          break
+        case 'KeyD':
+          inputState.right = pressed
+          break
+        case 'Space':
+          inputState.up = pressed
+          break
+        case 'ShiftLeft':
+        case 'ShiftRight':
+          inputState.down = pressed
+          break
+        default:
+          return
+      }
+
+      event.preventDefault()
+    }
+
+  const handleKeyDown = onKeyChange(true)
+  const handleKeyUp = onKeyChange(false)
+  const handleLock = (): void => {
+    updatePointerState()
+  }
+  const handleUnlock = (): void => {
+    updatePointerState()
+  }
+  const handleLockButtonClick = (): void => {
+    if (!controls.isLocked) {
+      controls.lock(true)
+    }
+  }
+
+  document.addEventListener('keydown', handleKeyDown)
+  document.addEventListener('keyup', handleKeyUp)
+  controls.addEventListener('lock', handleLock)
+  controls.addEventListener('unlock', handleUnlock)
+  lockButton.addEventListener('click', handleLockButtonClick)
+  updatePointerState()
+
   fixedRateValue.textContent = '60'
+  speedValue.textContent = `${movementSpeed} u/s`
+  positionValue.textContent = `${initialPosition.x.toFixed(1)}, ${initialPosition.y.toFixed(
+    1
+  )}, ${initialPosition.z.toFixed(1)}`
   drawCallsValue.textContent = drawCalls.toString()
-
-  const orbitTarget = new THREE.Vector3(0, Math.max(size.y * 0.35, 1.5), 0)
-  const orbitRadius = Math.max(size.length() * 0.72, 16)
-  const cameraHeight = Math.max(size.y * 1.15, 10)
-  const orbitSpeed = 0.28
   const fixedLoop = new FixedStepLoop({ fixedDeltaSeconds: 1 / 60 })
-
-  let previousOrbitAngle = 0
-  let currentOrbitAngle = 0
 
   const resize = (): void => {
     const width = Math.max(viewport.clientWidth, 1)
@@ -169,6 +271,12 @@ export async function startDebugWorld(
     viewport.append(message)
 
     window.removeEventListener('resize', resize)
+    document.removeEventListener('keydown', handleKeyDown)
+    document.removeEventListener('keyup', handleKeyUp)
+    controls.removeEventListener('lock', handleLock)
+    controls.removeEventListener('unlock', handleUnlock)
+    lockButton.removeEventListener('click', handleLockButtonClick)
+    controls.dispose()
     void renderer.dispose()
 
     return () => {
@@ -181,29 +289,38 @@ export async function startDebugWorld(
     const frame = fixedLoop.advance(timestampSeconds)
 
     for (let step = 0; step < frame.steps; step += 1) {
-      previousOrbitAngle = currentOrbitAngle
-      currentOrbitAngle += orbitSpeed * frame.fixedDeltaSeconds
+      camera.position.copy(currentCameraPosition)
+      camera.updateMatrix()
+      previousCameraPosition.copy(currentCameraPosition)
+
+      const movement = getFlyMovementIntent(inputState)
+      controls.moveRight(
+        movement.right * movementSpeed * frame.fixedDeltaSeconds
+      )
+      controls.moveForward(
+        movement.forward * movementSpeed * frame.fixedDeltaSeconds
+      )
+      camera.position.y += movement.up * movementSpeed * frame.fixedDeltaSeconds
+
+      currentCameraPosition.copy(camera.position)
     }
 
     if (frame.steps === 0) {
-      previousOrbitAngle = currentOrbitAngle
+      previousCameraPosition.copy(currentCameraPosition)
     }
 
-    const interpolatedAngle = THREE.MathUtils.lerp(
-      previousOrbitAngle,
-      currentOrbitAngle,
+    camera.position.lerpVectors(
+      previousCameraPosition,
+      currentCameraPosition,
       frame.alpha
     )
 
-    camera.position.set(
-      Math.cos(interpolatedAngle) * orbitRadius,
-      cameraHeight + Math.sin(interpolatedAngle * 1.8) * 1.25,
-      Math.sin(interpolatedAngle) * orbitRadius
-    )
-    camera.lookAt(orbitTarget)
-
-    stepCountValue.textContent = frame.steps.toString()
-    alphaValue.textContent = frame.alpha.toFixed(2)
+    positionValue.textContent = `${currentCameraPosition.x.toFixed(
+      1
+    )}, ${currentCameraPosition.y.toFixed(1)}, ${currentCameraPosition.z.toFixed(
+      1
+    )}`
+    updatePointerState()
 
     void renderer.render(scene, camera)
   })
@@ -211,6 +328,12 @@ export async function startDebugWorld(
   return () => {
     void renderer.setAnimationLoop(null)
     window.removeEventListener('resize', resize)
+    document.removeEventListener('keydown', handleKeyDown)
+    document.removeEventListener('keyup', handleKeyUp)
+    controls.removeEventListener('lock', handleLock)
+    controls.removeEventListener('unlock', handleUnlock)
+    lockButton.removeEventListener('click', handleLockButtonClick)
+    controls.dispose()
     disposeObject(scene)
     void renderer.dispose()
     root.innerHTML = ''
