@@ -158,6 +158,40 @@ select {
   color: var(--text-strong);
 }
 
+.lock-button {
+  width: 100%;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(245, 159, 98, 0.32);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(245, 159, 98, 0.16), rgba(245, 159, 98, 0.08)),
+    rgba(255, 255, 255, 0.02);
+  color: var(--text-strong);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+.lock-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(245, 159, 98, 0.55);
+  background:
+    linear-gradient(180deg, rgba(245, 159, 98, 0.24), rgba(245, 159, 98, 0.12)),
+    rgba(255, 255, 255, 0.03);
+}
+
+.lock-button:focus-visible {
+  outline: 2px solid rgba(245, 159, 98, 0.75);
+  outline-offset: 2px;
+}
+
 .footnote {
   position: absolute;
   right: 20px;

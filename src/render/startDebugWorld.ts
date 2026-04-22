@@ -8,7 +8,8 @@ import {
 } from '../camera/getFlyMovementIntent.ts'
 import { FixedStepLoop } from '../core/FixedStepLoop.ts'
 import { createChunkMesh } from '../mesh/createChunkMesh.ts'
-import { createDebugChunk } from '../world/createDebugChunk.ts'
+import { chunkOrigin, createChunkGrid } from '../world/World.ts'
+import { createWorldChunk } from '../world/createWorldChunk.ts'
 
 type DebugWorldHandle = () => void
 type DisposableMesh = THREE.Mesh<
@@ -57,10 +58,10 @@ export async function startDebugWorld(
   root.innerHTML = `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Step 7</p>
-        <h1 class="title">Fly Camera</h1>
+        <p class="eyebrow">Kiseki / Step 8</p>
+        <h1 class="title">Multiple Chunks</h1>
         <p class="subtitle">
-          Pointer lock handles mouse look, while movement runs through the fixed 60 Hz simulation loop.
+          A 3 by 3 by 3 world grid is now stitched together from chunk-local meshes positioned in world space.
         </p>
         <dl class="stats">
           <div class="stats-card">
@@ -76,12 +77,16 @@ export async function startDebugWorld(
             <dd data-fixed-rate>60</dd>
           </div>
           <div class="stats-card">
+            <dt>Chunks</dt>
+            <dd data-chunk-count>0</dd>
+          </div>
+          <div class="stats-card">
             <dt>Position</dt>
             <dd data-position>0, 0, 0</dd>
           </div>
           <div class="stats-card">
-            <dt>Speed</dt>
-            <dd data-speed>8 u/s</dd>
+            <dt>Faces</dt>
+            <dd data-face-count>0</dd>
           </div>
           <div class="stats-card">
             <dt>Draw Calls</dt>
@@ -93,7 +98,7 @@ export async function startDebugWorld(
         </button>
       </div>
       <div class="viewport" data-viewport></div>
-      <p class="footnote">WASD to strafe, Space and Shift for vertical movement, Esc to release the mouse.</p>
+      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. Chunk seams are expected until step 9.</p>
     </main>
   `
 
@@ -103,8 +108,9 @@ export async function startDebugWorld(
     '[data-pointer-state]'
   )
   const fixedRateValue = root.querySelector<HTMLElement>('[data-fixed-rate]')
+  const chunkCountValue = root.querySelector<HTMLElement>('[data-chunk-count]')
   const positionValue = root.querySelector<HTMLElement>('[data-position]')
-  const speedValue = root.querySelector<HTMLElement>('[data-speed]')
+  const faceCountValue = root.querySelector<HTMLElement>('[data-face-count]')
   const drawCallsValue = root.querySelector<HTMLElement>('[data-draw-calls]')
   const lockButton = root.querySelector<HTMLButtonElement>('[data-lock-button]')
 
@@ -113,8 +119,9 @@ export async function startDebugWorld(
     statusValue === null ||
     pointerStateValue === null ||
     fixedRateValue === null ||
+    chunkCountValue === null ||
     positionValue === null ||
-    speedValue === null ||
+    faceCountValue === null ||
     drawCallsValue === null ||
     lockButton === null
   ) {
@@ -136,7 +143,7 @@ export async function startDebugWorld(
 
   const scene = new THREE.Scene()
   scene.background = new THREE.Color(0x04060b)
-  scene.fog = new THREE.Fog(0x04060b, 18, 42)
+  scene.fog = new THREE.Fog(0x04060b, 64, 180)
 
   const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 200)
   const movementSpeed = 8
@@ -151,19 +158,36 @@ export async function startDebugWorld(
   fillLight.position.set(-10, 8, -12)
   scene.add(fillLight)
 
-  const { drawCalls, mesh } = createChunkMesh(createDebugChunk())
+  const world = createChunkGrid(1, createWorldChunk)
+  const worldGroup = new THREE.Group()
+  let drawCalls = 0
+  let totalFaceCount = 0
 
-  mesh.updateMatrixWorld(true)
+  for (const entry of world.entries()) {
+    const {
+      drawCalls: chunkDrawCalls,
+      faceCount,
+      mesh,
+    } = createChunkMesh(entry.chunk)
+    const origin = chunkOrigin(entry.coords)
 
-  const bounds = new THREE.Box3().setFromObject(mesh)
+    mesh.position.set(origin.x, origin.y, origin.z)
+    worldGroup.add(mesh)
+    drawCalls += chunkDrawCalls
+    totalFaceCount += faceCount
+  }
+
+  worldGroup.updateMatrixWorld(true)
+
+  const bounds = new THREE.Box3().setFromObject(worldGroup)
   const center = bounds.getCenter(new THREE.Vector3())
   const size = bounds.getSize(new THREE.Vector3())
   const flyTarget = new THREE.Vector3(0, Math.max(size.y * 0.35, 1.5), 0)
   const orbitRadius = Math.max(size.length() * 0.72, 16)
   const cameraHeight = Math.max(size.y * 1.15, 10)
 
-  mesh.position.set(-center.x, -bounds.min.y, -center.z)
-  scene.add(mesh)
+  worldGroup.position.set(-center.x, -bounds.min.y, -center.z)
+  scene.add(worldGroup)
 
   const initialPosition = new THREE.Vector3(
     orbitRadius * 0.74,
@@ -239,7 +263,8 @@ export async function startDebugWorld(
   updatePointerState()
 
   fixedRateValue.textContent = '60'
-  speedValue.textContent = `${movementSpeed} u/s`
+  chunkCountValue.textContent = world.entries().length.toString()
+  faceCountValue.textContent = totalFaceCount.toString()
   positionValue.textContent = `${initialPosition.x.toFixed(1)}, ${initialPosition.y.toFixed(
     1
   )}, ${initialPosition.z.toFixed(1)}`
