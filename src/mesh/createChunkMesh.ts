@@ -38,10 +38,13 @@ export function createChunkMesh(
     roughness: 0.9,
   })
 
+  const mesh = new THREE.Mesh(geometry, material)
+  mesh.frustumCulled = true
+
   return {
     drawCalls: data.solidCount > 0 ? 1 : 0,
     faceCount: data.faceCount,
-    mesh: new THREE.Mesh(geometry, material),
+    mesh,
     solidCount: data.solidCount,
     triangleCount: data.triangleCount,
   }

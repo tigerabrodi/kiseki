@@ -8,6 +8,7 @@ import {
 } from '../camera/getFlyMovementIntent.ts'
 import { FixedStepLoop } from '../core/FixedStepLoop.ts'
 import { createChunkMesh } from '../mesh/createChunkMesh.ts'
+import { countVisibleChunkMeshes } from './countVisibleChunkMeshes.ts'
 import { ChunkStreamer } from '../world/ChunkStreamer.ts'
 import { chunkKey, chunkOrigin } from '../world/World.ts'
 import { TerrainGenerator } from '../world/TerrainGenerator.ts'
@@ -59,10 +60,10 @@ export async function startDebugWorld(
   root.innerHTML = `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Step 11</p>
-        <h1 class="title">Chunk Streaming</h1>
+        <p class="eyebrow">Kiseki / Step 12</p>
+        <h1 class="title">Frustum Culling</h1>
         <p class="subtitle">
-          Chunks now stream around the player with a hysteresis buffer, so terrain loads ahead of movement without thrashing at chunk boundaries.
+          Chunk bounds now feed frustum culling, so off-screen terrain can stay loaded for streaming without being rendered every frame.
         </p>
         <dl class="stats">
           <div class="stats-card">
@@ -86,6 +87,10 @@ export async function startDebugWorld(
             <dd data-player-chunk>0,0,0</dd>
           </div>
           <div class="stats-card">
+            <dt>Visible Chunks</dt>
+            <dd data-visible-chunks>0</dd>
+          </div>
+          <div class="stats-card">
             <dt>Position</dt>
             <dd data-position>0, 0, 0</dd>
           </div>
@@ -103,7 +108,7 @@ export async function startDebugWorld(
         </button>
       </div>
       <div class="viewport" data-viewport></div>
-      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. Chunks load within radius 1 and unload once they fall beyond radius 2.</p>
+      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. Turn away from the terrain and the visible-chunk count should drop below the loaded chunk count.</p>
     </main>
   `
 
@@ -117,6 +122,9 @@ export async function startDebugWorld(
   const playerChunkValue = root.querySelector<HTMLElement>(
     '[data-player-chunk]'
   )
+  const visibleChunksValue = root.querySelector<HTMLElement>(
+    '[data-visible-chunks]'
+  )
   const positionValue = root.querySelector<HTMLElement>('[data-position]')
   const faceCountValue = root.querySelector<HTMLElement>('[data-face-count]')
   const drawCallsValue = root.querySelector<HTMLElement>('[data-draw-calls]')
@@ -129,6 +137,7 @@ export async function startDebugWorld(
     fixedRateValue === null ||
     chunkCountValue === null ||
     playerChunkValue === null ||
+    visibleChunksValue === null ||
     positionValue === null ||
     faceCountValue === null ||
     drawCallsValue === null ||
@@ -175,6 +184,7 @@ export async function startDebugWorld(
   })
   let worldGroup = new THREE.Group()
   scene.add(worldGroup)
+  let chunkMeshes: Array<DisposableMesh> = []
   let drawCalls = 0
   let totalFaceCount = 0
 
@@ -183,6 +193,7 @@ export async function startDebugWorld(
     disposeObject(worldGroup)
 
     const nextWorldGroup = new THREE.Group()
+    const nextChunkMeshes: Array<DisposableMesh> = []
     let nextDrawCalls = 0
     let nextFaceCount = 0
 
@@ -201,17 +212,24 @@ export async function startDebugWorld(
 
       chunkMesh.mesh.position.set(origin.x, origin.y, origin.z)
       nextWorldGroup.add(chunkMesh.mesh)
+      nextChunkMeshes.push(chunkMesh.mesh)
       nextDrawCalls += chunkMesh.drawCalls
       nextFaceCount += chunkMesh.faceCount
     }
 
     worldGroup = nextWorldGroup
+    chunkMeshes = nextChunkMeshes
     scene.add(worldGroup)
+    worldGroup.updateMatrixWorld(true)
     drawCalls = nextDrawCalls
     totalFaceCount = nextFaceCount
     chunkCountValue.textContent = chunkStreamer.world.size().toString()
     faceCountValue.textContent = totalFaceCount.toString()
     drawCallsValue.textContent = drawCalls.toString()
+    visibleChunksValue.textContent = countVisibleChunkMeshes(
+      camera,
+      chunkMeshes
+    ).toString()
   }
 
   const syncStreamedWorld = (position: THREE.Vector3): void => {
@@ -234,6 +252,7 @@ export async function startDebugWorld(
   )
   camera.position.copy(initialPosition)
   camera.lookAt(flyTarget)
+  camera.updateMatrixWorld()
   syncStreamedWorld(initialPosition)
 
   const controls = new PointerLockControls(camera, renderer.domElement)
@@ -375,6 +394,7 @@ export async function startDebugWorld(
       currentCameraPosition,
       frame.alpha
     )
+    camera.updateMatrixWorld()
 
     syncStreamedWorld(currentCameraPosition)
     positionValue.textContent = `${currentCameraPosition.x.toFixed(
@@ -382,6 +402,10 @@ export async function startDebugWorld(
     )}, ${currentCameraPosition.y.toFixed(1)}, ${currentCameraPosition.z.toFixed(
       1
     )}`
+    visibleChunksValue.textContent = countVisibleChunkMeshes(
+      camera,
+      chunkMeshes
+    ).toString()
     updatePointerState()
 
     void renderer.render(scene, camera)
