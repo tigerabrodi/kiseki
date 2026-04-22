@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu'
 import WebGPU from 'three/addons/capabilities/WebGPU.js'
 
+import { FixedStepLoop } from '../core/FixedStepLoop.ts'
 import { createChunkMesh } from '../mesh/createChunkMesh.ts'
 import { createDebugChunk } from '../world/createDebugChunk.ts'
 
@@ -40,10 +41,10 @@ export async function startDebugWorld(
   root.innerHTML = `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Step 5</p>
-        <h1 class="title">Face Culling</h1>
+        <p class="eyebrow">Kiseki / Step 6</p>
+        <h1 class="title">Fixed Update Loop</h1>
         <p class="subtitle">
-          Shared faces between solid voxels are skipped, while chunk edges still treat out-of-bounds as air.
+          Simulation advances at a fixed 60 Hz, while rendering interpolates between the last two update states.
         </p>
         <dl class="stats">
           <div class="stats-card">
@@ -51,16 +52,16 @@ export async function startDebugWorld(
             <dd data-status>Checking WebGPU</dd>
           </div>
           <div class="stats-card">
-            <dt>Solid Voxels</dt>
-            <dd data-solid-count>0</dd>
+            <dt>Fixed Hz</dt>
+            <dd data-fixed-rate>60</dd>
           </div>
           <div class="stats-card">
-            <dt>Visible Faces</dt>
-            <dd data-face-count>0</dd>
+            <dt>Last Steps</dt>
+            <dd data-step-count>0</dd>
           </div>
           <div class="stats-card">
-            <dt>Triangles</dt>
-            <dd data-triangle-count>0</dd>
+            <dt>Interp Alpha</dt>
+            <dd data-alpha>0.00</dd>
           </div>
           <div class="stats-card">
             <dt>Draw Calls</dt>
@@ -69,25 +70,23 @@ export async function startDebugWorld(
         </dl>
       </div>
       <div class="viewport" data-viewport></div>
-      <p class="footnote">Chunk boundaries still count as air. Neighbor-aware meshing lands in step 9.</p>
+      <p class="footnote">Auto-orbit is now simulation driven. Fly camera lands in step 7.</p>
     </main>
   `
 
   const viewport = root.querySelector<HTMLElement>('[data-viewport]')
   const statusValue = root.querySelector<HTMLElement>('[data-status]')
-  const solidCountValue = root.querySelector<HTMLElement>('[data-solid-count]')
-  const faceCountValue = root.querySelector<HTMLElement>('[data-face-count]')
-  const triangleCountValue = root.querySelector<HTMLElement>(
-    '[data-triangle-count]'
-  )
+  const fixedRateValue = root.querySelector<HTMLElement>('[data-fixed-rate]')
+  const stepCountValue = root.querySelector<HTMLElement>('[data-step-count]')
+  const alphaValue = root.querySelector<HTMLElement>('[data-alpha]')
   const drawCallsValue = root.querySelector<HTMLElement>('[data-draw-calls]')
 
   if (
     viewport === null ||
     statusValue === null ||
-    solidCountValue === null ||
-    faceCountValue === null ||
-    triangleCountValue === null ||
+    fixedRateValue === null ||
+    stepCountValue === null ||
+    alphaValue === null ||
     drawCallsValue === null
   ) {
     throw new Error('Failed to mount debug world UI')
@@ -122,8 +121,7 @@ export async function startDebugWorld(
   fillLight.position.set(-10, 8, -12)
   scene.add(fillLight)
 
-  const { drawCalls, faceCount, mesh, solidCount, triangleCount } =
-    createChunkMesh(createDebugChunk())
+  const { drawCalls, mesh } = createChunkMesh(createDebugChunk())
 
   mesh.updateMatrixWorld(true)
 
@@ -134,15 +132,17 @@ export async function startDebugWorld(
   mesh.position.set(-center.x, -bounds.min.y, -center.z)
   scene.add(mesh)
 
-  solidCountValue.textContent = solidCount.toString()
-  faceCountValue.textContent = faceCount.toString()
-  triangleCountValue.textContent = triangleCount.toString()
+  fixedRateValue.textContent = '60'
   drawCallsValue.textContent = drawCalls.toString()
 
-  const target = new THREE.Vector3(0, Math.max(size.y * 0.35, 1.5), 0)
+  const orbitTarget = new THREE.Vector3(0, Math.max(size.y * 0.35, 1.5), 0)
   const orbitRadius = Math.max(size.length() * 0.72, 16)
   const cameraHeight = Math.max(size.y * 1.15, 10)
-  const clock = new THREE.Clock()
+  const orbitSpeed = 0.28
+  const fixedLoop = new FixedStepLoop({ fixedDeltaSeconds: 1 / 60 })
+
+  let previousOrbitAngle = 0
+  let currentOrbitAngle = 0
 
   const resize = (): void => {
     const width = Math.max(viewport.clientWidth, 1)
@@ -176,15 +176,34 @@ export async function startDebugWorld(
     }
   }
 
-  void renderer.setAnimationLoop(() => {
-    const elapsed = clock.getElapsedTime() * 0.28
+  void renderer.setAnimationLoop((timestampMilliseconds?: number) => {
+    const timestampSeconds = (timestampMilliseconds ?? 0) / 1000
+    const frame = fixedLoop.advance(timestampSeconds)
+
+    for (let step = 0; step < frame.steps; step += 1) {
+      previousOrbitAngle = currentOrbitAngle
+      currentOrbitAngle += orbitSpeed * frame.fixedDeltaSeconds
+    }
+
+    if (frame.steps === 0) {
+      previousOrbitAngle = currentOrbitAngle
+    }
+
+    const interpolatedAngle = THREE.MathUtils.lerp(
+      previousOrbitAngle,
+      currentOrbitAngle,
+      frame.alpha
+    )
 
     camera.position.set(
-      Math.cos(elapsed) * orbitRadius,
-      cameraHeight + Math.sin(elapsed * 1.8) * 1.25,
-      Math.sin(elapsed) * orbitRadius
+      Math.cos(interpolatedAngle) * orbitRadius,
+      cameraHeight + Math.sin(interpolatedAngle * 1.8) * 1.25,
+      Math.sin(interpolatedAngle) * orbitRadius
     )
-    camera.lookAt(target)
+    camera.lookAt(orbitTarget)
+
+    stepCountValue.textContent = frame.steps.toString()
+    alphaValue.textContent = frame.alpha.toFixed(2)
 
     void renderer.render(scene, camera)
   })
