@@ -1,4 +1,5 @@
 import { CHUNK_SIZE, Chunk } from '../voxel/chunk.ts'
+import type { ChunkNeighbors } from '../voxel/chunkNeighbors.ts'
 
 const FACE_VERTEX_COUNT = 4
 const FACE_INDEX_COUNT = 6
@@ -110,15 +111,63 @@ function isInBounds(x: number, y: number, z: number): boolean {
   )
 }
 
-function isSolid(chunk: Chunk, x: number, y: number, z: number): boolean {
-  if (!isInBounds(x, y, z)) {
-    return false
+function getMaterialId(
+  chunk: Chunk,
+  neighbors: ChunkNeighbors,
+  x: number,
+  y: number,
+  z: number
+): number {
+  if (isInBounds(x, y, z)) {
+    return chunk.get(x, y, z)
   }
 
-  return chunk.get(x, y, z) !== 0
+  const isYInBounds = y >= 0 && y < CHUNK_SIZE
+  const isZInBounds = z >= 0 && z < CHUNK_SIZE
+
+  if (x < 0 && isYInBounds && isZInBounds) {
+    return neighbors.nx?.get(CHUNK_SIZE - 1, y, z) ?? 0
+  }
+
+  if (x >= CHUNK_SIZE && isYInBounds && isZInBounds) {
+    return neighbors.px?.get(0, y, z) ?? 0
+  }
+
+  const isXInBounds = x >= 0 && x < CHUNK_SIZE
+
+  if (y < 0 && isXInBounds && isZInBounds) {
+    return neighbors.ny?.get(x, CHUNK_SIZE - 1, z) ?? 0
+  }
+
+  if (y >= CHUNK_SIZE && isXInBounds && isZInBounds) {
+    return neighbors.py?.get(x, 0, z) ?? 0
+  }
+
+  if (z < 0 && isXInBounds && isYInBounds) {
+    return neighbors.nz?.get(x, y, CHUNK_SIZE - 1) ?? 0
+  }
+
+  if (z >= CHUNK_SIZE && isXInBounds && isYInBounds) {
+    return neighbors.pz?.get(x, y, 0) ?? 0
+  }
+
+  return 0
 }
 
-export function buildChunkGeometryData(chunk: Chunk): ChunkGeometryData {
+function isSolid(
+  chunk: Chunk,
+  neighbors: ChunkNeighbors,
+  x: number,
+  y: number,
+  z: number
+): boolean {
+  return getMaterialId(chunk, neighbors, x, y, z) !== 0
+}
+
+export function buildChunkGeometryData(
+  chunk: Chunk,
+  neighbors: ChunkNeighbors = {}
+): ChunkGeometryData {
   let solidCount = 0
   let faceCount = 0
 
@@ -131,7 +180,7 @@ export function buildChunkGeometryData(chunk: Chunk): ChunkGeometryData {
   for (let z = 0; z < CHUNK_SIZE; z += 1) {
     for (let y = 0; y < CHUNK_SIZE; y += 1) {
       for (let x = 0; x < CHUNK_SIZE; x += 1) {
-        if (!isSolid(chunk, x, y, z)) {
+        if (!isSolid(chunk, neighbors, x, y, z)) {
           continue
         }
 
@@ -140,7 +189,7 @@ export function buildChunkGeometryData(chunk: Chunk): ChunkGeometryData {
           const neighborY = y + face.neighborOffset[1]
           const neighborZ = z + face.neighborOffset[2]
 
-          if (!isSolid(chunk, neighborX, neighborY, neighborZ)) {
+          if (!isSolid(chunk, neighbors, neighborX, neighborY, neighborZ)) {
             faceCount += 1
           }
         }
@@ -178,7 +227,7 @@ export function buildChunkGeometryData(chunk: Chunk): ChunkGeometryData {
           const neighborY = y + face.neighborOffset[1]
           const neighborZ = z + face.neighborOffset[2]
 
-          if (isSolid(chunk, neighborX, neighborY, neighborZ)) {
+          if (isSolid(chunk, neighbors, neighborX, neighborY, neighborZ)) {
             continue
           }
 

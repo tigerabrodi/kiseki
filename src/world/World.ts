@@ -1,4 +1,5 @@
 import { CHUNK_SIZE, Chunk } from '../voxel/chunk.ts'
+import type { ChunkNeighbors } from '../voxel/chunkNeighbors.ts'
 
 export type ChunkCoordinates = {
   x: number
@@ -35,6 +36,17 @@ export class World {
 
   getChunk(coords: ChunkCoordinates): Chunk | undefined {
     return this.chunks.get(chunkKey(coords))?.chunk
+  }
+
+  getChunkNeighbors(coords: ChunkCoordinates): ChunkNeighbors {
+    return {
+      nx: this.getChunk({ x: coords.x - 1, y: coords.y, z: coords.z }),
+      px: this.getChunk({ x: coords.x + 1, y: coords.y, z: coords.z }),
+      ny: this.getChunk({ x: coords.x, y: coords.y - 1, z: coords.z }),
+      py: this.getChunk({ x: coords.x, y: coords.y + 1, z: coords.z }),
+      nz: this.getChunk({ x: coords.x, y: coords.y, z: coords.z - 1 }),
+      pz: this.getChunk({ x: coords.x, y: coords.y, z: coords.z + 1 }),
+    }
   }
 
   entries(): Array<WorldChunkEntry> {

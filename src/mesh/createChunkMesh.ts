@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu'
 
 import { Chunk } from '../voxel/chunk.ts'
+import type { ChunkNeighbors } from '../voxel/chunkNeighbors.ts'
 import { buildChunkGeometryData } from './buildChunkGeometryData.ts'
 
 export type ChunkMesh = {
@@ -11,8 +12,11 @@ export type ChunkMesh = {
   triangleCount: number
 }
 
-export function createChunkMesh(chunk: Chunk): ChunkMesh {
-  const data = buildChunkGeometryData(chunk)
+export function createChunkMesh(
+  chunk: Chunk,
+  neighbors: ChunkNeighbors = {}
+): ChunkMesh {
+  const data = buildChunkGeometryData(chunk, neighbors)
   const geometry = new THREE.BufferGeometry()
 
   geometry.setAttribute(

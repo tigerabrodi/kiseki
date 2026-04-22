@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest'
 
-import { Chunk } from '../voxel/chunk.ts'
+import { CHUNK_SIZE, Chunk } from '../voxel/chunk.ts'
 import { buildChunkGeometryData } from './buildChunkGeometryData.ts'
+
+function fillChunk(chunk: Chunk, materialId: number): void {
+  for (let z = 0; z < CHUNK_SIZE; z += 1) {
+    for (let y = 0; y < CHUNK_SIZE; y += 1) {
+      for (let x = 0; x < CHUNK_SIZE; x += 1) {
+        chunk.set(x, y, z, materialId)
+      }
+    }
+  }
+}
 
 describe('buildChunkGeometryData', () => {
   it('returns empty geometry for an empty chunk', () => {
@@ -46,5 +56,24 @@ describe('buildChunkGeometryData', () => {
     expect(data.vertexCount).toBe(40)
     expect(data.indexCount).toBe(60)
     expect(data.triangleCount).toBe(20)
+  })
+
+  it('culls shared boundary faces when a solid neighbor chunk is present', () => {
+    const chunk = new Chunk()
+    const pxNeighbor = new Chunk()
+
+    fillChunk(chunk, 1)
+    fillChunk(pxNeighbor, 1)
+
+    const isolatedData = buildChunkGeometryData(chunk)
+    const neighborAwareData = buildChunkGeometryData(chunk, {
+      px: pxNeighbor,
+    })
+
+    expect(isolatedData.faceCount).toBe(6 * CHUNK_SIZE * CHUNK_SIZE)
+    expect(neighborAwareData.faceCount).toBe(5 * CHUNK_SIZE * CHUNK_SIZE)
+    expect(isolatedData.faceCount - neighborAwareData.faceCount).toBe(
+      CHUNK_SIZE * CHUNK_SIZE
+    )
   })
 })

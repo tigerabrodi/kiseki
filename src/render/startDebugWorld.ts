@@ -58,10 +58,10 @@ export async function startDebugWorld(
   root.innerHTML = `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Step 8</p>
-        <h1 class="title">Multiple Chunks</h1>
+        <p class="eyebrow">Kiseki / Step 9</p>
+        <h1 class="title">Neighbor-Aware Meshing</h1>
         <p class="subtitle">
-          A 3 by 3 by 3 world grid is now stitched together from chunk-local meshes positioned in world space.
+          The mesher now checks across chunk boundaries, so shared faces disappear instead of leaving visible seams.
         </p>
         <dl class="stats">
           <div class="stats-card">
@@ -98,7 +98,7 @@ export async function startDebugWorld(
         </button>
       </div>
       <div class="viewport" data-viewport></div>
-      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. Chunk seams are expected until step 9.</p>
+      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. Shared chunk boundaries now cull correctly.</p>
     </main>
   `
 
@@ -168,7 +168,7 @@ export async function startDebugWorld(
       drawCalls: chunkDrawCalls,
       faceCount,
       mesh,
-    } = createChunkMesh(entry.chunk)
+    } = createChunkMesh(entry.chunk, world.getChunkNeighbors(entry.coords))
     const origin = chunkOrigin(entry.coords)
 
     mesh.position.set(origin.x, origin.y, origin.z)
