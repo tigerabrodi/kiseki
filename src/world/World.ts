@@ -38,6 +38,19 @@ export class World {
     return this.chunks.get(chunkKey(coords))?.chunk
   }
 
+  hasChunk(coords: ChunkCoordinates): boolean {
+    return this.chunks.has(chunkKey(coords))
+  }
+
+  deleteChunk(coords: ChunkCoordinates): Chunk | undefined {
+    const key = chunkKey(coords)
+    const entry = this.chunks.get(key)
+
+    this.chunks.delete(key)
+
+    return entry?.chunk
+  }
+
   getChunkNeighbors(coords: ChunkCoordinates): ChunkNeighbors {
     return {
       nx: this.getChunk({ x: coords.x - 1, y: coords.y, z: coords.z }),
@@ -51,6 +64,10 @@ export class World {
 
   entries(): Array<WorldChunkEntry> {
     return [...this.chunks.values()]
+  }
+
+  size(): number {
+    return this.chunks.size
   }
 }
 

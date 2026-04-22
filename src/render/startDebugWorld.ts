@@ -8,7 +8,8 @@ import {
 } from '../camera/getFlyMovementIntent.ts'
 import { FixedStepLoop } from '../core/FixedStepLoop.ts'
 import { createChunkMesh } from '../mesh/createChunkMesh.ts'
-import { chunkOrigin, createChunkGrid } from '../world/World.ts'
+import { ChunkStreamer } from '../world/ChunkStreamer.ts'
+import { chunkKey, chunkOrigin } from '../world/World.ts'
 import { TerrainGenerator } from '../world/TerrainGenerator.ts'
 
 type DebugWorldHandle = () => void
@@ -58,10 +59,10 @@ export async function startDebugWorld(
   root.innerHTML = `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Step 10</p>
-        <h1 class="title">Procedural Terrain</h1>
+        <p class="eyebrow">Kiseki / Step 11</p>
+        <h1 class="title">Chunk Streaming</h1>
         <p class="subtitle">
-          Seeded simplex noise now generates chunk terrain from world coordinates, so the landscape stays deterministic and continuous.
+          Chunks now stream around the player with a hysteresis buffer, so terrain loads ahead of movement without thrashing at chunk boundaries.
         </p>
         <dl class="stats">
           <div class="stats-card">
@@ -81,6 +82,10 @@ export async function startDebugWorld(
             <dd data-chunk-count>0</dd>
           </div>
           <div class="stats-card">
+            <dt>Player Chunk</dt>
+            <dd data-player-chunk>0,0,0</dd>
+          </div>
+          <div class="stats-card">
             <dt>Position</dt>
             <dd data-position>0, 0, 0</dd>
           </div>
@@ -98,7 +103,7 @@ export async function startDebugWorld(
         </button>
       </div>
       <div class="viewport" data-viewport></div>
-      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. The current terrain seed is deterministic across reloads.</p>
+      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. Chunks load within radius 1 and unload once they fall beyond radius 2.</p>
     </main>
   `
 
@@ -109,6 +114,9 @@ export async function startDebugWorld(
   )
   const fixedRateValue = root.querySelector<HTMLElement>('[data-fixed-rate]')
   const chunkCountValue = root.querySelector<HTMLElement>('[data-chunk-count]')
+  const playerChunkValue = root.querySelector<HTMLElement>(
+    '[data-player-chunk]'
+  )
   const positionValue = root.querySelector<HTMLElement>('[data-position]')
   const faceCountValue = root.querySelector<HTMLElement>('[data-face-count]')
   const drawCallsValue = root.querySelector<HTMLElement>('[data-draw-calls]')
@@ -120,6 +128,7 @@ export async function startDebugWorld(
     pointerStateValue === null ||
     fixedRateValue === null ||
     chunkCountValue === null ||
+    playerChunkValue === null ||
     positionValue === null ||
     faceCountValue === null ||
     drawCallsValue === null ||
@@ -159,46 +168,73 @@ export async function startDebugWorld(
   scene.add(fillLight)
 
   const terrainGenerator = new TerrainGenerator({ seed: 'kiseki' })
-  const world = createChunkGrid(1, (coords) =>
-    terrainGenerator.createChunk(coords)
-  )
-  const worldGroup = new THREE.Group()
+  const chunkStreamer = new ChunkStreamer({
+    createChunk: (coords) => terrainGenerator.createChunk(coords),
+    loadRadius: 1,
+    unloadBuffer: 1,
+  })
+  let worldGroup = new THREE.Group()
+  scene.add(worldGroup)
   let drawCalls = 0
   let totalFaceCount = 0
 
-  for (const entry of world.entries()) {
-    const {
-      drawCalls: chunkDrawCalls,
-      faceCount,
-      mesh,
-    } = createChunkMesh(entry.chunk, world.getChunkNeighbors(entry.coords))
-    const origin = chunkOrigin(entry.coords)
+  const rebuildWorldMeshes = (): void => {
+    scene.remove(worldGroup)
+    disposeObject(worldGroup)
 
-    mesh.position.set(origin.x, origin.y, origin.z)
-    worldGroup.add(mesh)
-    drawCalls += chunkDrawCalls
-    totalFaceCount += faceCount
+    const nextWorldGroup = new THREE.Group()
+    let nextDrawCalls = 0
+    let nextFaceCount = 0
+
+    for (const entry of chunkStreamer.world.entries()) {
+      const chunkMesh = createChunkMesh(
+        entry.chunk,
+        chunkStreamer.world.getChunkNeighbors(entry.coords)
+      )
+
+      if (chunkMesh.solidCount === 0) {
+        disposeObject(chunkMesh.mesh)
+        continue
+      }
+
+      const origin = chunkOrigin(entry.coords)
+
+      chunkMesh.mesh.position.set(origin.x, origin.y, origin.z)
+      nextWorldGroup.add(chunkMesh.mesh)
+      nextDrawCalls += chunkMesh.drawCalls
+      nextFaceCount += chunkMesh.faceCount
+    }
+
+    worldGroup = nextWorldGroup
+    scene.add(worldGroup)
+    drawCalls = nextDrawCalls
+    totalFaceCount = nextFaceCount
+    chunkCountValue.textContent = chunkStreamer.world.size().toString()
+    faceCountValue.textContent = totalFaceCount.toString()
+    drawCallsValue.textContent = drawCalls.toString()
   }
 
-  worldGroup.updateMatrixWorld(true)
+  const syncStreamedWorld = (position: THREE.Vector3): void => {
+    const streamUpdate = chunkStreamer.updateFromWorldPosition(position)
+    playerChunkValue.textContent = chunkKey(streamUpdate.playerChunk)
 
-  const bounds = new THREE.Box3().setFromObject(worldGroup)
-  const center = bounds.getCenter(new THREE.Vector3())
-  const size = bounds.getSize(new THREE.Vector3())
-  const flyTarget = new THREE.Vector3(0, Math.max(size.y * 0.35, 1.5), 0)
-  const orbitRadius = Math.max(size.length() * 0.72, 16)
-  const cameraHeight = Math.max(size.y * 1.15, 10)
+    if (streamUpdate.didChange) {
+      rebuildWorldMeshes()
+    }
+  }
 
-  worldGroup.position.set(-center.x, -bounds.min.y, -center.z)
-  scene.add(worldGroup)
-
+  const spawnX = 16
+  const spawnZ = 48
+  const spawnSurfaceHeight = terrainGenerator.getSurfaceHeightAt(spawnX, spawnZ)
+  const flyTarget = new THREE.Vector3(spawnX, spawnSurfaceHeight + 6, 0)
   const initialPosition = new THREE.Vector3(
-    orbitRadius * 0.74,
-    cameraHeight,
-    orbitRadius * 0.74
+    spawnX,
+    spawnSurfaceHeight + 18,
+    spawnZ
   )
   camera.position.copy(initialPosition)
   camera.lookAt(flyTarget)
+  syncStreamedWorld(initialPosition)
 
   const controls = new PointerLockControls(camera, renderer.domElement)
   controls.pointerSpeed = 0.75
@@ -266,12 +302,9 @@ export async function startDebugWorld(
   updatePointerState()
 
   fixedRateValue.textContent = '60'
-  chunkCountValue.textContent = world.entries().length.toString()
-  faceCountValue.textContent = totalFaceCount.toString()
   positionValue.textContent = `${initialPosition.x.toFixed(1)}, ${initialPosition.y.toFixed(
     1
   )}, ${initialPosition.z.toFixed(1)}`
-  drawCallsValue.textContent = drawCalls.toString()
   const fixedLoop = new FixedStepLoop({ fixedDeltaSeconds: 1 / 60 })
 
   const resize = (): void => {
@@ -343,6 +376,7 @@ export async function startDebugWorld(
       frame.alpha
     )
 
+    syncStreamedWorld(currentCameraPosition)
     positionValue.textContent = `${currentCameraPosition.x.toFixed(
       1
     )}, ${currentCameraPosition.y.toFixed(1)}, ${currentCameraPosition.z.toFixed(

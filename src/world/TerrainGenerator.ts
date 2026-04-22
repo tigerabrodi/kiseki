@@ -81,7 +81,7 @@ export class TerrainGenerator {
     return chunk
   }
 
-  private getSurfaceHeight(worldX: number, worldZ: number): number {
+  getSurfaceHeightAt(worldX: number, worldZ: number): number {
     const continentalNoise = this.noise2D(worldX * 0.018, worldZ * 0.018)
     const detailNoise = this.noise2D(
       worldX * 0.061 + 191.7,
@@ -93,5 +93,9 @@ export class TerrainGenerator {
         continentalNoise * this.heightAmplitude +
         detailNoise * this.detailAmplitude
     )
+  }
+
+  private getSurfaceHeight(worldX: number, worldZ: number): number {
+    return this.getSurfaceHeightAt(worldX, worldZ)
   }
 }
