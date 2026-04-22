@@ -9,7 +9,7 @@ import {
 import { FixedStepLoop } from '../core/FixedStepLoop.ts'
 import { createChunkMesh } from '../mesh/createChunkMesh.ts'
 import { chunkOrigin, createChunkGrid } from '../world/World.ts'
-import { createWorldChunk } from '../world/createWorldChunk.ts'
+import { TerrainGenerator } from '../world/TerrainGenerator.ts'
 
 type DebugWorldHandle = () => void
 type DisposableMesh = THREE.Mesh<
@@ -58,10 +58,10 @@ export async function startDebugWorld(
   root.innerHTML = `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Step 9</p>
-        <h1 class="title">Neighbor-Aware Meshing</h1>
+        <p class="eyebrow">Kiseki / Step 10</p>
+        <h1 class="title">Procedural Terrain</h1>
         <p class="subtitle">
-          The mesher now checks across chunk boundaries, so shared faces disappear instead of leaving visible seams.
+          Seeded simplex noise now generates chunk terrain from world coordinates, so the landscape stays deterministic and continuous.
         </p>
         <dl class="stats">
           <div class="stats-card">
@@ -98,7 +98,7 @@ export async function startDebugWorld(
         </button>
       </div>
       <div class="viewport" data-viewport></div>
-      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. Shared chunk boundaries now cull correctly.</p>
+      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. The current terrain seed is deterministic across reloads.</p>
     </main>
   `
 
@@ -158,7 +158,10 @@ export async function startDebugWorld(
   fillLight.position.set(-10, 8, -12)
   scene.add(fillLight)
 
-  const world = createChunkGrid(1, createWorldChunk)
+  const terrainGenerator = new TerrainGenerator({ seed: 'kiseki' })
+  const world = createChunkGrid(1, (coords) =>
+    terrainGenerator.createChunk(coords)
+  )
   const worldGroup = new THREE.Group()
   let drawCalls = 0
   let totalFaceCount = 0
