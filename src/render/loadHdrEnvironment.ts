@@ -12,7 +12,9 @@ export async function loadHdrEnvironment(
   renderer: THREE.WebGPURenderer
 ): Promise<HdrEnvironment> {
   const loader = new HDRLoader()
-  const hdrTexture = await loader.loadAsync('/environments/dam_road_2k.hdr')
+  const hdrTexture = await loader.loadAsync(
+    '/environments/citrus_orchard_road_puresky_2k.hdr'
+  )
   hdrTexture.mapping = THREE.EquirectangularReflectionMapping
 
   const pmremGenerator = new THREE.PMREMGenerator(renderer)
@@ -25,7 +27,7 @@ export async function loadHdrEnvironment(
       hdrTexture.dispose()
       pmremRenderTarget.dispose()
     },
-    environmentName: 'Dam Road 2K',
+    environmentName: 'Citrus Orchard Road (Pure Sky) 2K',
     environmentTexture: pmremRenderTarget.texture,
   }
 }
