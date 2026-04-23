@@ -11,6 +11,14 @@ import {
   installKisekiDebugSurface,
   type KisekiDebugStats,
 } from '../debug/installKisekiDebugSurface.ts'
+import { GpuChunkVoxelCache } from '../gpu/GpuChunkVoxelCache.ts'
+import {
+  createGpuVoxelBuffer,
+  destroyGpuVoxelBuffer,
+  getGpuVoxelBufferInfo,
+  getWebGpuDevice,
+  readGpuVoxelChunkMaterials,
+} from '../gpu/GpuVoxelBuffer.ts'
 import { createChunkMesh } from '../mesh/createChunkMesh.ts'
 import {
   ProfileRecorder,
@@ -21,6 +29,7 @@ import { countVisibleChunkMeshes } from './countVisibleChunkMeshes.ts'
 import { loadHdrEnvironment } from './loadHdrEnvironment.ts'
 import { loadVoxelTextureAtlas } from './loadVoxelTextureAtlas.ts'
 import {
+  type ChunkStreamUpdate,
   ChunkStreamer,
   worldPositionToChunkCoordinates,
 } from '../world/ChunkStreamer.ts'
@@ -102,16 +111,20 @@ function getJsHeapBytes(): number | null {
   return performanceWithMemory.memory?.usedJSHeapSize ?? null
 }
 
+function bytesToMegabytes(bytes: number): number {
+  return bytes / (1024 * 1024)
+}
+
 export async function startDebugWorld(
   root: HTMLElement
 ): Promise<DebugWorldHandle> {
   root.innerHTML = `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Step 16</p>
-        <h1 class="title">Profile Checkpoint 1</h1>
+        <p class="eyebrow">Kiseki / Step 17</p>
+        <h1 class="title">GPU Voxel Storage</h1>
         <p class="subtitle">
-          Record a flying session, stop it, and we&apos;ll capture the current CPU meshing baseline with FPS, chunk load, triangle load, rebuild cost, GPU timestamp, and memory numbers.
+          CPU terrain still generates each chunk, but now every streamed chunk also uploads its voxel IDs into a dedicated WebGPU storage buffer with a readback path for debugging the future compute mesher.
         </p>
         <dl class="stats">
           <div class="stats-card">
@@ -141,6 +154,14 @@ export async function startDebugWorld(
           <div class="stats-card">
             <dt>Mesh ms</dt>
             <dd data-mesh-time>0.00</dd>
+          </div>
+          <div class="stats-card">
+            <dt>Voxel Buffers</dt>
+            <dd data-gpu-voxel-count>0</dd>
+          </div>
+          <div class="stats-card">
+            <dt>Voxel MB</dt>
+            <dd data-gpu-voxel-mb>0.00</dd>
           </div>
           <div class="stats-card">
             <dt>Vertex Bytes</dt>
@@ -196,11 +217,11 @@ export async function startDebugWorld(
           </button>
         </div>
         <pre class="profile-report" data-profile-report>
-Press Start Profile Run, fly around for a bit, then stop to capture your step-16 baseline.
+Press Start Profile Run, fly around for a bit, then stop to capture your step-17 baseline.
         </pre>
       </div>
       <div class="viewport" data-viewport></div>
-      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. This checkpoint is about measuring the current CPU world-streaming path before step 17 starts moving voxel data and meshing deeper onto the GPU.</p>
+      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. The world still renders from the CPU mesher for now, but each loaded chunk now has a mirrored GPU storage buffer ready for step 18&apos;s compute meshing work.</p>
     </main>
   `
 
@@ -214,6 +235,12 @@ Press Start Profile Run, fly around for a bit, then stop to capture your step-16
   const cpuTimeValue = root.querySelector<HTMLElement>('[data-cpu-time]')
   const gpuTimeValue = root.querySelector<HTMLElement>('[data-gpu-time]')
   const meshTimeValue = root.querySelector<HTMLElement>('[data-mesh-time]')
+  const gpuVoxelCountValue = root.querySelector<HTMLElement>(
+    '[data-gpu-voxel-count]'
+  )
+  const gpuVoxelMegabytesValue = root.querySelector<HTMLElement>(
+    '[data-gpu-voxel-mb]'
+  )
   const vertexBytesValue = root.querySelector<HTMLElement>(
     '[data-vertex-bytes]'
   )
@@ -253,6 +280,8 @@ Press Start Profile Run, fly around for a bit, then stop to capture your step-16
     cpuTimeValue === null ||
     gpuTimeValue === null ||
     meshTimeValue === null ||
+    gpuVoxelCountValue === null ||
+    gpuVoxelMegabytesValue === null ||
     vertexBytesValue === null ||
     profileStateValue === null ||
     chunkCountValue === null ||
@@ -324,6 +353,8 @@ Press Start Profile Run, fly around for a bit, then stop to capture your step-16
   let hdrEnvironmentName: string | null = null
   let voxelChunkMaterial: THREE.MeshStandardNodeMaterial | null = null
   let disposeHdrEnvironment = (): void => {}
+  let gpuDevice: GPUDevice | null = null
+  let gpuVoxelCache: GpuChunkVoxelCache | null = null
   let pendingGpuTimestampResolve: Promise<void> | null = null
   let renderFramesSinceGpuResolve = 0
   const profileRecorder = new ProfileRecorder()
@@ -378,10 +409,17 @@ Press Start Profile Run, fly around for a bit, then stop to capture your step-16
     profileRecorder.recordMeshGeneration(lastMeshGenerationTimeMs)
   }
 
+  const syncGpuVoxelBuffers = (
+    update: Pick<ChunkStreamUpdate, 'loaded' | 'unloaded'>
+  ): void => {
+    gpuVoxelCache?.sync(update)
+  }
+
   const syncStreamedWorld = (position: THREE.Vector3): void => {
     const streamUpdate = chunkStreamer.updateFromWorldPosition(position)
 
     if (streamUpdate.didChange) {
+      syncGpuVoxelBuffers(streamUpdate)
       rebuildWorldMeshes()
     }
 
@@ -416,6 +454,8 @@ Press Start Profile Run, fly around for a bit, then stop to capture your step-16
       drawCalls,
       faceCount: totalFaceCount,
       fps: smoothedFps,
+      gpuVoxelBufferBytes: gpuVoxelCache?.totalBytes() ?? 0,
+      gpuVoxelBufferCount: gpuVoxelCache?.size() ?? 0,
       gpuTimeMs: lastGpuFrameTimeMs,
       loadedChunkCount: chunkStreamer.world.size(),
       meshGenerationTimeMs: lastMeshGenerationTimeMs,
@@ -466,7 +506,7 @@ Press Start Profile Run, fly around for a bit, then stop to capture your step-16
     }
 
     profileReportValue.textContent =
-      'Press Start Profile Run, fly around for a bit, then stop to capture your step-16 baseline.'
+      'Press Start Profile Run, fly around for a bit, then stop to capture your step-17 baseline.'
   }
 
   const applyStatsToHud = (): void => {
@@ -477,6 +517,10 @@ Press Start Profile Run, fly around for a bit, then stop to capture your step-16
     gpuTimeValue.textContent =
       stats.gpuTimeMs === null ? 'n/a' : stats.gpuTimeMs.toFixed(2)
     meshTimeValue.textContent = stats.meshGenerationTimeMs.toFixed(2)
+    gpuVoxelCountValue.textContent = stats.gpuVoxelBufferCount.toString()
+    gpuVoxelMegabytesValue.textContent = bytesToMegabytes(
+      stats.gpuVoxelBufferBytes
+    ).toFixed(2)
     vertexBytesValue.textContent = stats.vertexBytesPerVertex.toString()
     chunkCountValue.textContent = stats.loadedChunkCount.toString()
     playerChunkValue.textContent = chunkKey(stats.playerChunk)
@@ -626,6 +670,8 @@ Press Start Profile Run, fly around for a bit, then stop to capture your step-16
   const uninstallDebugSurface = installKisekiDebugSurface({
     camera,
     chunkStreamer,
+    getGpuChunkInfo: (x: number, y: number, z: number) =>
+      getGpuVoxelBufferInfo({ x, y, z }, gpuVoxelCache?.getBuffer({ x, y, z })),
     getMeshInfo: () => {
       const firstMesh = chunkMeshes[0]
 
@@ -650,6 +696,19 @@ Press Start Profile Run, fly around for a bit, then stop to capture your step-16
       hasEnvironment: scene.environment !== null,
     }),
     getStats: buildStatsSnapshot,
+    readGpuChunkMaterials: async (x: number, y: number, z: number) => {
+      if (gpuDevice === null) {
+        return null
+      }
+
+      const handle = gpuVoxelCache?.getBuffer({ x, y, z })
+
+      if (handle === undefined) {
+        return null
+      }
+
+      return Array.from(await readGpuVoxelChunkMaterials(gpuDevice, handle))
+    },
     setCameraPosition: (x: number, y: number, z: number): void => {
       currentCameraPosition.set(x, y, z)
       previousCameraPosition.copy(currentCameraPosition)
@@ -690,6 +749,14 @@ Press Start Profile Run, fly around for a bit, then stop to capture your step-16
 
   try {
     await renderer.init()
+    gpuDevice = getWebGpuDevice(renderer)
+    gpuVoxelCache = new GpuChunkVoxelCache((entry) => {
+      if (gpuDevice === null) {
+        throw new Error('GPU voxel cache needs an initialized WebGPU device')
+      }
+
+      return createGpuVoxelBuffer(gpuDevice, entry)
+    }, destroyGpuVoxelBuffer)
     statusValue.textContent = 'Loading assets'
     const [atlas, hdrEnvironment] = await Promise.all([
       loadVoxelTextureAtlas(renderer),
@@ -720,6 +787,7 @@ Press Start Profile Run, fly around for a bit, then stop to capture your step-16
     copyProfileButton.removeEventListener('click', handleCopyProfileButtonPress)
     uninstallDebugSurface()
     controls.dispose()
+    gpuVoxelCache?.dispose()
     disposeHdrEnvironment()
     voxelChunkMaterial?.dispose()
     void renderer.dispose()
@@ -812,6 +880,7 @@ Press Start Profile Run, fly around for a bit, then stop to capture your step-16
     uninstallDebugSurface()
     controls.dispose()
     disposeMeshGeometries(worldGroup)
+    gpuVoxelCache?.dispose()
     disposeHdrEnvironment()
     voxelChunkMaterial?.dispose()
     void renderer.dispose()

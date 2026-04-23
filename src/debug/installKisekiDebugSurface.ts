@@ -18,6 +18,8 @@ export type KisekiDebugStats = {
   drawCalls: number
   faceCount: number
   fps: number
+  gpuVoxelBufferBytes: number
+  gpuVoxelBufferCount: number
   gpuTimeMs: number | null
   loadedChunkCount: number
   meshGenerationTimeMs: number
@@ -41,14 +43,27 @@ export type KisekiSceneInfo = {
   hasEnvironment: boolean
 } | null
 
+export type KisekiGpuChunkInfo = {
+  byteLength: number
+  coords: ChunkCoordinates
+  label: string
+  voxelCount: number
+} | null
+
 export type KisekiDebugSurface = {
   camera: THREE.PerspectiveCamera
   chunkStreamer: ChunkStreamer
+  getGpuChunkInfo: (x: number, y: number, z: number) => KisekiGpuChunkInfo
   getMeshInfo: () => KisekiMeshInfo
   getProfileReport: () => ProfileReport | null
   getProfileState: () => ProfileSessionState
   getSceneInfo: () => KisekiSceneInfo
   getStats: () => KisekiDebugStats
+  readGpuChunkMaterials: (
+    x: number,
+    y: number,
+    z: number
+  ) => Promise<Array<number> | null>
   setCameraPosition: (x: number, y: number, z: number) => void
   startProfileSession: () => void
   stopProfileSession: () => Promise<ProfileReport | null>
