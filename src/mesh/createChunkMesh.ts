@@ -7,36 +7,34 @@ import { buildChunkGeometryData } from './buildChunkGeometryData.ts'
 export type ChunkMesh = {
   drawCalls: number
   faceCount: number
-  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>
+  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardNodeMaterial>
   solidCount: number
   triangleCount: number
 }
 
 export function createChunkMesh(
   chunk: Chunk,
+  material: THREE.MeshStandardNodeMaterial,
   neighbors: ChunkNeighbors = {}
 ): ChunkMesh {
   const data = buildChunkGeometryData(chunk, neighbors)
   const geometry = new THREE.BufferGeometry()
 
   geometry.setAttribute(
-    'position',
-    new THREE.BufferAttribute(data.positions, 3)
+    'packedData',
+    new THREE.Uint32BufferAttribute(data.packedVertices, 1)
   )
-  geometry.setAttribute('normal', new THREE.BufferAttribute(data.normals, 3))
-  geometry.setAttribute('color', new THREE.BufferAttribute(data.colors, 3))
   geometry.setIndex(new THREE.BufferAttribute(data.indices, 1))
 
-  if (data.vertexCount > 0) {
-    geometry.computeBoundingBox()
-    geometry.computeBoundingSphere()
+  if (data.bounds !== null) {
+    geometry.boundingBox = new THREE.Box3(
+      new THREE.Vector3(...data.bounds.min),
+      new THREE.Vector3(...data.bounds.max)
+    )
+    geometry.boundingSphere = geometry.boundingBox.getBoundingSphere(
+      new THREE.Sphere()
+    )
   }
-
-  const material = new THREE.MeshStandardMaterial({
-    vertexColors: true,
-    metalness: 0.08,
-    roughness: 0.9,
-  })
 
   const mesh = new THREE.Mesh(geometry, material)
   mesh.frustumCulled = true

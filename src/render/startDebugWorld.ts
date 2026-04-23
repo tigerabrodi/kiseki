@@ -12,7 +12,9 @@ import {
   type KisekiDebugStats,
 } from '../debug/installKisekiDebugSurface.ts'
 import { createChunkMesh } from '../mesh/createChunkMesh.ts'
+import { createVoxelChunkMaterial } from './createVoxelChunkMaterial.ts'
 import { countVisibleChunkMeshes } from './countVisibleChunkMeshes.ts'
+import { loadVoxelTextureAtlas } from './loadVoxelTextureAtlas.ts'
 import {
   ChunkStreamer,
   worldPositionToChunkCoordinates,
@@ -25,10 +27,6 @@ type DisposableMesh = THREE.Mesh<
   THREE.BufferGeometry,
   THREE.Material | Array<THREE.Material>
 >
-
-function disposeMaterial(material: THREE.Material): void {
-  material.dispose()
-}
 
 function createInputState(): FlyInputState {
   return {
@@ -45,19 +43,13 @@ function isDisposableMesh(object: THREE.Object3D): object is DisposableMesh {
   return object instanceof THREE.Mesh
 }
 
-function disposeObject(root: THREE.Object3D): void {
+function disposeMeshGeometries(root: THREE.Object3D): void {
   root.traverse((child: THREE.Object3D) => {
     if (!isDisposableMesh(child)) {
       return
     }
 
     child.geometry.dispose()
-
-    if (Array.isArray(child.material)) {
-      child.material.forEach(disposeMaterial)
-    } else {
-      disposeMaterial(child.material)
-    }
   })
 }
 
@@ -86,10 +78,10 @@ export async function startDebugWorld(
   root.innerHTML = `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Step 13</p>
-        <h1 class="title">Binary Greedy Meshing</h1>
+        <p class="eyebrow">Kiseki / Step 14</p>
+        <h1 class="title">Texture Arrays And Packed Vertices</h1>
         <p class="subtitle">
-          Visible coplanar faces now merge into larger rectangles, cutting the chunk mesh down before it ever reaches the GPU.
+          Greedy quads now stream through a single packed Uint32 vertex path, while the shader samples layered KTX2 materials directly on the GPU.
         </p>
         <dl class="stats">
           <div class="stats-card">
@@ -107,6 +99,10 @@ export async function startDebugWorld(
           <div class="stats-card">
             <dt>FPS</dt>
             <dd data-fps>0.0</dd>
+          </div>
+          <div class="stats-card">
+            <dt>Vertex Bytes</dt>
+            <dd data-vertex-bytes>4</dd>
           </div>
           <div class="stats-card">
             <dt>Chunks</dt>
@@ -142,7 +138,7 @@ export async function startDebugWorld(
         </button>
       </div>
       <div class="viewport" data-viewport></div>
-      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. Same-material surfaces now merge; alternating materials still stay split.</p>
+      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. WebGPU now decodes packed chunk vertices and samples layered KTX2 materials with nearest magnification and mip-filtered distance.</p>
     </main>
   `
 
@@ -153,6 +149,9 @@ export async function startDebugWorld(
   )
   const fixedRateValue = root.querySelector<HTMLElement>('[data-fixed-rate]')
   const fpsValue = root.querySelector<HTMLElement>('[data-fps]')
+  const vertexBytesValue = root.querySelector<HTMLElement>(
+    '[data-vertex-bytes]'
+  )
   const chunkCountValue = root.querySelector<HTMLElement>('[data-chunk-count]')
   const playerChunkValue = root.querySelector<HTMLElement>(
     '[data-player-chunk]'
@@ -174,6 +173,7 @@ export async function startDebugWorld(
     pointerStateValue === null ||
     fixedRateValue === null ||
     fpsValue === null ||
+    vertexBytesValue === null ||
     chunkCountValue === null ||
     playerChunkValue === null ||
     visibleChunksValue === null ||
@@ -229,25 +229,32 @@ export async function startDebugWorld(
   let totalFaceCount = 0
   let totalTriangleCount = 0
   let smoothedFps = 60
+  let voxelChunkMaterial: THREE.MeshStandardNodeMaterial | null = null
 
   const rebuildWorldMeshes = (): void => {
     scene.remove(worldGroup)
-    disposeObject(worldGroup)
+    disposeMeshGeometries(worldGroup)
 
     const nextWorldGroup = new THREE.Group()
     const nextChunkMeshes: Array<DisposableMesh> = []
     let nextDrawCalls = 0
     let nextFaceCount = 0
     let nextTriangleCount = 0
+    const activeMaterial = voxelChunkMaterial
+
+    if (activeMaterial === null) {
+      return
+    }
 
     for (const entry of chunkStreamer.world.entries()) {
       const chunkMesh = createChunkMesh(
         entry.chunk,
+        activeMaterial,
         chunkStreamer.world.getChunkNeighbors(entry.coords)
       )
 
       if (chunkMesh.solidCount === 0) {
-        disposeObject(chunkMesh.mesh)
+        chunkMesh.mesh.geometry.dispose()
         continue
       }
 
@@ -315,6 +322,7 @@ export async function startDebugWorld(
         z: currentCameraPosition.z,
       },
       triangleCount: totalTriangleCount,
+      vertexBytesPerVertex: 4,
       visibleChunkCount: countVisibleChunkMeshes(camera, chunkMeshes),
     }
   }
@@ -323,6 +331,7 @@ export async function startDebugWorld(
     const stats = buildStatsSnapshot()
 
     fpsValue.textContent = stats.fps.toFixed(1)
+    vertexBytesValue.textContent = stats.vertexBytesPerVertex.toString()
     chunkCountValue.textContent = stats.loadedChunkCount.toString()
     playerChunkValue.textContent = chunkKey(stats.playerChunk)
     visibleChunksValue.textContent = stats.visibleChunkCount.toString()
@@ -333,8 +342,6 @@ export async function startDebugWorld(
     triangleCountValue.textContent = stats.triangleCount.toString()
     drawCallsValue.textContent = stats.drawCalls.toString()
   }
-
-  syncStreamedWorld(initialPosition)
 
   const updatePointerState = (): void => {
     pointerStateValue.textContent = controls.isLocked ? 'Locked' : 'Unlocked'
@@ -401,6 +408,22 @@ export async function startDebugWorld(
   const uninstallDebugSurface = installKisekiDebugSurface({
     camera,
     chunkStreamer,
+    getMeshInfo: () => {
+      const firstMesh = chunkMeshes[0]
+
+      if (firstMesh === undefined) {
+        return null
+      }
+
+      return {
+        attributeNames: Object.keys(firstMesh.geometry.attributes),
+        indexCount: firstMesh.geometry.index?.count ?? 0,
+        materialType: Array.isArray(firstMesh.material)
+          ? 'ArrayMaterial'
+          : firstMesh.material.type,
+        vertexCount: firstMesh.geometry.attributes.packedData?.count ?? 0,
+      }
+    },
     getStats: buildStatsSnapshot,
     setCameraPosition: (x: number, y: number, z: number): void => {
       currentCameraPosition.set(x, y, z)
@@ -432,14 +455,17 @@ export async function startDebugWorld(
 
   try {
     await renderer.init()
+    statusValue.textContent = 'Loading texture arrays'
+    const atlas = await loadVoxelTextureAtlas(renderer)
+    voxelChunkMaterial = createVoxelChunkMaterial(atlas)
     statusValue.textContent = 'WebGPU ready'
   } catch (error) {
-    statusValue.textContent = 'Renderer init failed'
+    statusValue.textContent = 'Renderer setup failed'
     const message = document.createElement('pre')
     message.textContent =
       error instanceof Error
         ? error.message
-        : 'Unknown WebGPU initialization error'
+        : 'Unknown WebGPU initialization error or texture load failure'
     viewport.append(message)
 
     window.removeEventListener('resize', resize)
@@ -450,12 +476,15 @@ export async function startDebugWorld(
     lockButton.removeEventListener('click', handleLockButtonClick)
     uninstallDebugSurface()
     controls.dispose()
+    voxelChunkMaterial?.dispose()
     void renderer.dispose()
 
     return () => {
       root.innerHTML = ''
     }
   }
+
+  syncStreamedWorld(initialPosition)
 
   void renderer.setAnimationLoop((timestampMilliseconds?: number) => {
     const timestampSeconds = (timestampMilliseconds ?? 0) / 1000
@@ -510,7 +539,8 @@ export async function startDebugWorld(
     lockButton.removeEventListener('click', handleLockButtonClick)
     uninstallDebugSurface()
     controls.dispose()
-    disposeObject(scene)
+    disposeMeshGeometries(worldGroup)
+    voxelChunkMaterial?.dispose()
     void renderer.dispose()
     root.innerHTML = ''
   }

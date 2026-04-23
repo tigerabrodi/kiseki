@@ -17,12 +17,21 @@ export type KisekiDebugStats = {
   playerChunk: ChunkCoordinates
   position: KisekiDebugPosition
   triangleCount: number
+  vertexBytesPerVertex: number
   visibleChunkCount: number
 }
+
+export type KisekiMeshInfo = {
+  attributeNames: Array<string>
+  indexCount: number
+  materialType: string
+  vertexCount: number
+} | null
 
 export type KisekiDebugSurface = {
   camera: THREE.PerspectiveCamera
   chunkStreamer: ChunkStreamer
+  getMeshInfo: () => KisekiMeshInfo
   getStats: () => KisekiDebugStats
   setCameraPosition: (x: number, y: number, z: number) => void
   syncWorld: () => void

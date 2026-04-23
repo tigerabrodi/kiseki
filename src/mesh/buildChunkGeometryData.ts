@@ -1,49 +1,32 @@
+import { resolveVoxelMaterialLayer } from '../materials/resolveVoxelMaterialLayer.ts'
 import { Chunk } from '../voxel/chunk.ts'
 import type { ChunkNeighbors } from '../voxel/chunkNeighbors.ts'
+import { buildChunkQuads, type ChunkQuad } from './buildChunkQuads.ts'
 import {
-  buildChunkQuads,
-  type ChunkFaceDirection,
-  type ChunkQuad,
-} from './buildChunkQuads.ts'
+  encodeChunkFaceDirection,
+  packVoxelVertex,
+} from './packedVoxelVertex.ts'
 
 const FACE_VERTEX_COUNT = 4
 const FACE_INDEX_COUNT = 6
-const POSITION_COMPONENTS = 3
 
 type Vec3 = readonly [number, number, number]
 
-const MATERIAL_COLORS = new Map<number, Vec3>([
-  [1, [101 / 255, 116 / 255, 138 / 255]],
-  [2, [178 / 255, 111 / 255, 82 / 255]],
-  [3, [108 / 255, 168 / 255, 108 / 255]],
-  [4, [231 / 255, 201 / 255, 151 / 255]],
-  [5, [110 / 255, 183 / 255, 1]],
-])
-
-const FACE_NORMALS: Record<ChunkFaceDirection, Vec3> = {
-  nx: [-1, 0, 0],
-  ny: [0, -1, 0],
-  nz: [0, 0, -1],
-  px: [1, 0, 0],
-  py: [0, 1, 0],
-  pz: [0, 0, 1],
+export type ChunkGeometryBounds = {
+  max: Vec3
+  min: Vec3
 }
 
 export type ChunkGeometryData = {
-  colors: Float32Array
+  bounds: ChunkGeometryBounds | null
   faceCount: number
   indexCount: number
   indices: Uint32Array
-  normals: Float32Array
-  positions: Float32Array
+  packedVertices: Uint32Array
   solidCount: number
   triangleCount: number
   vertexCount: number
   visibleFaceCount: number
-}
-
-function getColor(materialId: number): Vec3 {
-  return MATERIAL_COLORS.get(materialId) ?? [1, 1, 1]
 }
 
 function getQuadCorners(quad: ChunkQuad): readonly [Vec3, Vec3, Vec3, Vec3] {
@@ -102,39 +85,42 @@ export function buildChunkGeometryData(
   const vertexCount = faceCount * FACE_VERTEX_COUNT
   const indexCount = faceCount * FACE_INDEX_COUNT
 
-  const positions = new Float32Array(vertexCount * POSITION_COMPONENTS)
-  const normals = new Float32Array(vertexCount * POSITION_COMPONENTS)
-  const colors = new Float32Array(vertexCount * POSITION_COMPONENTS)
+  const packedVertices = new Uint32Array(vertexCount)
   const indices = new Uint32Array(indexCount)
 
-  let positionOffset = 0
-  let normalOffset = 0
-  let colorOffset = 0
   let indexOffset = 0
   let vertexOffset = 0
+  let minX = Number.POSITIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let minZ = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+  let maxZ = Number.NEGATIVE_INFINITY
 
   for (const quad of quadData.quads) {
-    const color = getColor(quad.materialId)
-    const normal = FACE_NORMALS[quad.direction]
+    const materialLayer = resolveVoxelMaterialLayer(
+      quad.materialId,
+      quad.direction
+    )
+    const normalDirection = encodeChunkFaceDirection(quad.direction)
     const corners = getQuadCorners(quad)
     const baseVertex = vertexOffset
 
     for (const corner of corners) {
-      positions[positionOffset] = corner[0]
-      positions[positionOffset + 1] = corner[1]
-      positions[positionOffset + 2] = corner[2]
-      positionOffset += POSITION_COMPONENTS
+      packedVertices[vertexOffset] = packVoxelVertex({
+        materialId: materialLayer,
+        normalDirection,
+        x: corner[0],
+        y: corner[1],
+        z: corner[2],
+      })
 
-      normals[normalOffset] = normal[0]
-      normals[normalOffset + 1] = normal[1]
-      normals[normalOffset + 2] = normal[2]
-      normalOffset += POSITION_COMPONENTS
-
-      colors[colorOffset] = color[0]
-      colors[colorOffset + 1] = color[1]
-      colors[colorOffset + 2] = color[2]
-      colorOffset += POSITION_COMPONENTS
-
+      minX = Math.min(minX, corner[0])
+      minY = Math.min(minY, corner[1])
+      minZ = Math.min(minZ, corner[2])
+      maxX = Math.max(maxX, corner[0])
+      maxY = Math.max(maxY, corner[1])
+      maxZ = Math.max(maxZ, corner[2])
       vertexOffset += 1
     }
 
@@ -148,12 +134,17 @@ export function buildChunkGeometryData(
   }
 
   return {
-    colors,
+    bounds:
+      vertexCount > 0
+        ? {
+            max: [maxX, maxY, maxZ],
+            min: [minX, minY, minZ],
+          }
+        : null,
     faceCount,
     indexCount,
     indices,
-    normals,
-    positions,
+    packedVertices,
     solidCount: quadData.solidCount,
     triangleCount: indexCount / 3,
     vertexCount,
