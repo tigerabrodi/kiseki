@@ -192,6 +192,87 @@ select {
   outline-offset: 2px;
 }
 
+.action-row {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.secondary-button,
+.ghost-button {
+  padding: 11px 14px;
+  border-radius: 14px;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease,
+    color 140ms ease;
+}
+
+.secondary-button {
+  border: 1px solid rgba(110, 183, 255, 0.34);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(110, 183, 255, 0.18),
+      rgba(110, 183, 255, 0.1)
+    ),
+    rgba(255, 255, 255, 0.02);
+  color: var(--text-strong);
+}
+
+.ghost-button {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-soft);
+}
+
+.secondary-button:hover,
+.ghost-button:hover {
+  transform: translateY(-1px);
+}
+
+.secondary-button:hover {
+  border-color: rgba(110, 183, 255, 0.6);
+}
+
+.ghost-button:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.secondary-button:focus-visible,
+.ghost-button:focus-visible {
+  outline: 2px solid rgba(110, 183, 255, 0.75);
+  outline-offset: 2px;
+}
+
+.secondary-button:disabled,
+.ghost-button:disabled,
+.lock-button:disabled {
+  transform: none;
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.profile-report {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(5, 9, 16, 0.72);
+  color: var(--text-soft);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
 .footnote {
   position: absolute;
   right: 20px;
@@ -223,5 +304,9 @@ select {
     max-width: calc(100vw - 32px);
     white-space: normal;
     border-radius: 16px;
+  }
+
+  .action-row {
+    grid-template-columns: 1fr;
   }
 }

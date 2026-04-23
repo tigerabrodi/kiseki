@@ -12,6 +12,10 @@ import {
   type KisekiDebugStats,
 } from '../debug/installKisekiDebugSurface.ts'
 import { createChunkMesh } from '../mesh/createChunkMesh.ts'
+import {
+  ProfileRecorder,
+  formatProfileReport,
+} from '../profiling/ProfileRecorder.ts'
 import { createVoxelChunkMaterial } from './createVoxelChunkMaterial.ts'
 import { countVisibleChunkMeshes } from './countVisibleChunkMeshes.ts'
 import { loadHdrEnvironment } from './loadHdrEnvironment.ts'
@@ -28,6 +32,11 @@ type DisposableMesh = THREE.Mesh<
   THREE.BufferGeometry,
   THREE.Material | Array<THREE.Material>
 >
+type PerformanceWithMemory = Performance & {
+  memory?: {
+    usedJSHeapSize: number
+  }
+}
 
 function createInputState(): FlyInputState {
   return {
@@ -87,16 +96,22 @@ function turnCameraByDegrees(
   camera.updateMatrixWorld()
 }
 
+function getJsHeapBytes(): number | null {
+  const performanceWithMemory = performance as PerformanceWithMemory
+
+  return performanceWithMemory.memory?.usedJSHeapSize ?? null
+}
+
 export async function startDebugWorld(
   root: HTMLElement
 ): Promise<DebugWorldHandle> {
   root.innerHTML = `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Step 15</p>
-        <h1 class="title">HDR Environment Lighting</h1>
+        <p class="eyebrow">Kiseki / Step 16</p>
+        <h1 class="title">Profile Checkpoint 1</h1>
         <p class="subtitle">
-          A Poly Haven outdoor HDRI now drives the ambient light, so the packed voxel material finally picks up image-based lighting instead of only relying on our debug lights.
+          Record a flying session, stop it, and we&apos;ll capture the current CPU meshing baseline with FPS, chunk load, triangle load, rebuild cost, GPU timestamp, and memory numbers.
         </p>
         <dl class="stats">
           <div class="stats-card">
@@ -116,8 +131,24 @@ export async function startDebugWorld(
             <dd data-fps>0.0</dd>
           </div>
           <div class="stats-card">
+            <dt>CPU ms</dt>
+            <dd data-cpu-time>0.00</dd>
+          </div>
+          <div class="stats-card">
+            <dt>GPU ms</dt>
+            <dd data-gpu-time>n/a</dd>
+          </div>
+          <div class="stats-card">
+            <dt>Mesh ms</dt>
+            <dd data-mesh-time>0.00</dd>
+          </div>
+          <div class="stats-card">
             <dt>Vertex Bytes</dt>
             <dd data-vertex-bytes>4</dd>
+          </div>
+          <div class="stats-card">
+            <dt>Profile</dt>
+            <dd data-profile-state>Idle</dd>
           </div>
           <div class="stats-card">
             <dt>Chunks</dt>
@@ -151,9 +182,25 @@ export async function startDebugWorld(
         <button class="lock-button" type="button" data-lock-button>
           Click To Fly
         </button>
+        <div class="action-row">
+          <button class="secondary-button" type="button" data-profile-button>
+            Start Profile Run
+          </button>
+          <button
+            class="ghost-button"
+            type="button"
+            data-copy-profile-button
+            disabled
+          >
+            Copy Baseline
+          </button>
+        </div>
+        <pre class="profile-report" data-profile-report>
+Press Start Profile Run, fly around for a bit, then stop to capture your step-16 baseline.
+        </pre>
       </div>
       <div class="viewport" data-viewport></div>
-      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. The terrain is still the same step-14 mesh, but it now sits under a 2K outdoor HDR sky for proper image-based ambient response.</p>
+      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. This checkpoint is about measuring the current CPU world-streaming path before step 17 starts moving voxel data and meshing deeper onto the GPU.</p>
     </main>
   `
 
@@ -164,8 +211,14 @@ export async function startDebugWorld(
   )
   const fixedRateValue = root.querySelector<HTMLElement>('[data-fixed-rate]')
   const fpsValue = root.querySelector<HTMLElement>('[data-fps]')
+  const cpuTimeValue = root.querySelector<HTMLElement>('[data-cpu-time]')
+  const gpuTimeValue = root.querySelector<HTMLElement>('[data-gpu-time]')
+  const meshTimeValue = root.querySelector<HTMLElement>('[data-mesh-time]')
   const vertexBytesValue = root.querySelector<HTMLElement>(
     '[data-vertex-bytes]'
+  )
+  const profileStateValue = root.querySelector<HTMLElement>(
+    '[data-profile-state]'
   )
   const chunkCountValue = root.querySelector<HTMLElement>('[data-chunk-count]')
   const playerChunkValue = root.querySelector<HTMLElement>(
@@ -181,6 +234,15 @@ export async function startDebugWorld(
   )
   const drawCallsValue = root.querySelector<HTMLElement>('[data-draw-calls]')
   const lockButton = root.querySelector<HTMLButtonElement>('[data-lock-button]')
+  const profileButton = root.querySelector<HTMLButtonElement>(
+    '[data-profile-button]'
+  )
+  const copyProfileButton = root.querySelector<HTMLButtonElement>(
+    '[data-copy-profile-button]'
+  )
+  const profileReportValue = root.querySelector<HTMLElement>(
+    '[data-profile-report]'
+  )
 
   if (
     viewport === null ||
@@ -188,7 +250,11 @@ export async function startDebugWorld(
     pointerStateValue === null ||
     fixedRateValue === null ||
     fpsValue === null ||
+    cpuTimeValue === null ||
+    gpuTimeValue === null ||
+    meshTimeValue === null ||
     vertexBytesValue === null ||
+    profileStateValue === null ||
     chunkCountValue === null ||
     playerChunkValue === null ||
     visibleChunksValue === null ||
@@ -196,7 +262,10 @@ export async function startDebugWorld(
     faceCountValue === null ||
     triangleCountValue === null ||
     drawCallsValue === null ||
-    lockButton === null
+    lockButton === null ||
+    profileButton === null ||
+    copyProfileButton === null ||
+    profileReportValue === null
   ) {
     throw new Error('Failed to mount debug world UI')
   }
@@ -209,7 +278,10 @@ export async function startDebugWorld(
     }
   }
 
-  const renderer = new THREE.WebGPURenderer({ antialias: true })
+  const renderer = new THREE.WebGPURenderer({
+    antialias: true,
+    trackTimestamp: true,
+  })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.outputColorSpace = THREE.SRGBColorSpace
   viewport.append(renderer.domElement)
@@ -246,11 +318,19 @@ export async function startDebugWorld(
   let totalFaceCount = 0
   let totalTriangleCount = 0
   let smoothedFps = 60
+  let lastCpuFrameTimeMs = 0
+  let lastGpuFrameTimeMs: number | null = null
+  let lastMeshGenerationTimeMs = 0
   let hdrEnvironmentName: string | null = null
   let voxelChunkMaterial: THREE.MeshStandardNodeMaterial | null = null
   let disposeHdrEnvironment = (): void => {}
+  let pendingGpuTimestampResolve: Promise<void> | null = null
+  let renderFramesSinceGpuResolve = 0
+  const profileRecorder = new ProfileRecorder()
 
   const rebuildWorldMeshes = (): void => {
+    const rebuildStartMs = performance.now()
+
     scene.remove(worldGroup)
     disposeMeshGeometries(worldGroup)
 
@@ -294,6 +374,8 @@ export async function startDebugWorld(
     drawCalls = nextDrawCalls
     totalFaceCount = nextFaceCount
     totalTriangleCount = nextTriangleCount
+    lastMeshGenerationTimeMs = performance.now() - rebuildStartMs
+    profileRecorder.recordMeshGeneration(lastMeshGenerationTimeMs)
   }
 
   const syncStreamedWorld = (position: THREE.Vector3): void => {
@@ -330,10 +412,13 @@ export async function startDebugWorld(
     const playerChunk = worldPositionToChunkCoordinates(currentCameraPosition)
 
     return {
+      cpuTimeMs: lastCpuFrameTimeMs,
       drawCalls,
       faceCount: totalFaceCount,
       fps: smoothedFps,
+      gpuTimeMs: lastGpuFrameTimeMs,
       loadedChunkCount: chunkStreamer.world.size(),
+      meshGenerationTimeMs: lastMeshGenerationTimeMs,
       playerChunk,
       position: {
         x: currentCameraPosition.x,
@@ -346,10 +431,52 @@ export async function startDebugWorld(
     }
   }
 
+  const applyProfileHud = (): void => {
+    const profileState = profileRecorder.getSessionState(performance.now())
+    let profileLabel = 'Ready'
+
+    if (profileState.isRecording) {
+      profileLabel = `Rec ${profileState.elapsedSeconds.toFixed(1)}s`
+    } else if (profileState.lastReport === null) {
+      profileLabel = 'Idle'
+    }
+
+    profileStateValue.textContent = profileLabel
+
+    profileButton.textContent = profileState.isRecording
+      ? 'Stop & Save Baseline'
+      : 'Start Profile Run'
+    copyProfileButton.disabled =
+      profileState.isRecording || profileState.lastReport === null
+
+    if (profileState.isRecording) {
+      profileReportValue.textContent = [
+        'Recording baseline...',
+        `Elapsed: ${profileState.elapsedSeconds.toFixed(1)} s`,
+        'Fly around, stream some chunks, then stop to save the checkpoint.',
+      ].join('\n')
+      return
+    }
+
+    if (profileState.lastReport !== null) {
+      profileReportValue.textContent = formatProfileReport(
+        profileState.lastReport
+      )
+      return
+    }
+
+    profileReportValue.textContent =
+      'Press Start Profile Run, fly around for a bit, then stop to capture your step-16 baseline.'
+  }
+
   const applyStatsToHud = (): void => {
     const stats = buildStatsSnapshot()
 
     fpsValue.textContent = stats.fps.toFixed(1)
+    cpuTimeValue.textContent = stats.cpuTimeMs.toFixed(2)
+    gpuTimeValue.textContent =
+      stats.gpuTimeMs === null ? 'n/a' : stats.gpuTimeMs.toFixed(2)
+    meshTimeValue.textContent = stats.meshGenerationTimeMs.toFixed(2)
     vertexBytesValue.textContent = stats.vertexBytesPerVertex.toString()
     chunkCountValue.textContent = stats.loadedChunkCount.toString()
     playerChunkValue.textContent = chunkKey(stats.playerChunk)
@@ -360,6 +487,7 @@ export async function startDebugWorld(
     faceCountValue.textContent = stats.faceCount.toString()
     triangleCountValue.textContent = stats.triangleCount.toString()
     drawCallsValue.textContent = stats.drawCalls.toString()
+    applyProfileHud()
   }
 
   const updatePointerState = (): void => {
@@ -367,6 +495,44 @@ export async function startDebugWorld(
     lockButton.textContent = controls.isLocked
       ? 'Press Esc To Release'
       : 'Click To Fly'
+  }
+
+  const resolveGpuTimestampIfNeeded = (): void => {
+    if (
+      !profileRecorder.isRecording() ||
+      pendingGpuTimestampResolve !== null ||
+      renderFramesSinceGpuResolve < 15
+    ) {
+      return
+    }
+
+    renderFramesSinceGpuResolve = 0
+    pendingGpuTimestampResolve = renderer
+      .resolveTimestampsAsync(THREE.TimestampQuery.RENDER)
+      .then((timestampMs) => {
+        if (typeof timestampMs === 'number') {
+          lastGpuFrameTimeMs = timestampMs
+          profileRecorder.recordGpuTime(timestampMs)
+        }
+      })
+      .finally(() => {
+        pendingGpuTimestampResolve = null
+      })
+  }
+
+  const flushGpuTimestamp = async (): Promise<void> => {
+    if (pendingGpuTimestampResolve !== null) {
+      await pendingGpuTimestampResolve
+    }
+
+    const timestampMs = await renderer.resolveTimestampsAsync(
+      THREE.TimestampQuery.RENDER
+    )
+
+    if (typeof timestampMs === 'number') {
+      lastGpuFrameTimeMs = timestampMs
+      profileRecorder.recordGpuTime(timestampMs)
+    }
   }
 
   const onKeyChange =
@@ -412,12 +578,45 @@ export async function startDebugWorld(
       controls.lock(true)
     }
   }
+  const handleProfileButtonPress = (): void => {
+    void handleProfileButtonClick()
+  }
+  const handleCopyProfileButtonPress = (): void => {
+    void handleCopyProfileButtonClick()
+  }
+  const handleProfileButtonClick = async (): Promise<void> => {
+    if (profileRecorder.isRecording()) {
+      profileButton.disabled = true
+      try {
+        await flushGpuTimestamp()
+        profileRecorder.stop(performance.now())
+      } finally {
+        profileButton.disabled = false
+        applyStatsToHud()
+      }
+      return
+    }
+
+    profileRecorder.start(performance.now())
+    applyStatsToHud()
+  }
+  const handleCopyProfileButtonClick = async (): Promise<void> => {
+    const report = profileRecorder.getLastReport()
+
+    if (report === null) {
+      return
+    }
+
+    await navigator.clipboard.writeText(formatProfileReport(report))
+  }
 
   document.addEventListener('keydown', handleKeyDown)
   document.addEventListener('keyup', handleKeyUp)
   controls.addEventListener('lock', handleLock)
   controls.addEventListener('unlock', handleUnlock)
   lockButton.addEventListener('click', handleLockButtonClick)
+  profileButton.addEventListener('click', handleProfileButtonPress)
+  copyProfileButton.addEventListener('click', handleCopyProfileButtonPress)
   updatePointerState()
 
   fixedRateValue.textContent = '60'
@@ -443,6 +642,8 @@ export async function startDebugWorld(
         vertexCount: firstMesh.geometry.attributes.packedData?.count ?? 0,
       }
     },
+    getProfileReport: () => profileRecorder.getLastReport(),
+    getProfileState: () => profileRecorder.getSessionState(performance.now()),
     getSceneInfo: () => ({
       backgroundType: getSceneBackgroundType(scene.background),
       environmentName: hdrEnvironmentName,
@@ -455,6 +656,16 @@ export async function startDebugWorld(
       camera.position.copy(currentCameraPosition)
       camera.updateMatrixWorld()
       syncStreamedWorld(currentCameraPosition)
+    },
+    startProfileSession: (): void => {
+      profileRecorder.start(performance.now())
+      applyStatsToHud()
+    },
+    stopProfileSession: async () => {
+      await flushGpuTimestamp()
+      const report = profileRecorder.stop(performance.now())
+      applyStatsToHud()
+      return report
     },
     syncWorld: (): void => {
       syncStreamedWorld(currentCameraPosition)
@@ -505,6 +716,8 @@ export async function startDebugWorld(
     controls.removeEventListener('lock', handleLock)
     controls.removeEventListener('unlock', handleUnlock)
     lockButton.removeEventListener('click', handleLockButtonClick)
+    profileButton.removeEventListener('click', handleProfileButtonPress)
+    copyProfileButton.removeEventListener('click', handleCopyProfileButtonPress)
     uninstallDebugSurface()
     controls.dispose()
     disposeHdrEnvironment()
@@ -519,11 +732,13 @@ export async function startDebugWorld(
   syncStreamedWorld(initialPosition)
 
   void renderer.setAnimationLoop((timestampMilliseconds?: number) => {
+    const frameStartMs = performance.now()
     const timestampSeconds = (timestampMilliseconds ?? 0) / 1000
     const frame = fixedLoop.advance(timestampSeconds)
+    const instantaneousFps =
+      frame.frameTimeSeconds > 0 ? 1 / frame.frameTimeSeconds : smoothedFps
 
     if (frame.frameTimeSeconds > 0) {
-      const instantaneousFps = 1 / frame.frameTimeSeconds
       smoothedFps = THREE.MathUtils.lerp(smoothedFps, instantaneousFps, 0.15)
     }
 
@@ -559,6 +774,29 @@ export async function startDebugWorld(
     updatePointerState()
 
     void renderer.render(scene, camera)
+
+    lastCpuFrameTimeMs = performance.now() - frameStartMs
+
+    if (frame.frameTimeSeconds > 0) {
+      profileRecorder.recordFrame({
+        chunkCount: chunkStreamer.world.size(),
+        cpuTimeMs: lastCpuFrameTimeMs,
+        fps: instantaneousFps,
+        gpuMemoryBytes: renderer.info.memory.total,
+        gpuTimeMs: null,
+        jsHeapBytes: getJsHeapBytes(),
+        triangleCount: totalTriangleCount,
+      })
+    }
+
+    if (profileRecorder.isRecording()) {
+      renderFramesSinceGpuResolve += 1
+      resolveGpuTimestampIfNeeded()
+    } else {
+      renderFramesSinceGpuResolve = 0
+    }
+
+    applyStatsToHud()
   })
 
   return () => {
@@ -569,6 +807,8 @@ export async function startDebugWorld(
     controls.removeEventListener('lock', handleLock)
     controls.removeEventListener('unlock', handleUnlock)
     lockButton.removeEventListener('click', handleLockButtonClick)
+    profileButton.removeEventListener('click', handleProfileButtonPress)
+    copyProfileButton.removeEventListener('click', handleCopyProfileButtonPress)
     uninstallDebugSurface()
     controls.dispose()
     disposeMeshGeometries(worldGroup)
