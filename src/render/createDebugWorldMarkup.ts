@@ -2,10 +2,10 @@ export function createDebugWorldMarkup(): string {
   return `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Step 20</p>
-        <h1 class="title">Profile Checkpoint 2</h1>
+        <p class="eyebrow">Kiseki / Step 21</p>
+        <h1 class="title">GPU Terrain Generation</h1>
         <p class="subtitle">
-          The renderer is now drawing directly from GPU-written packed vertex, index, and indirect buffers. This checkpoint is about measuring how quiet the main thread stays while chunks stream in.
+          Loaded chunks now start as empty GPU voxel buffers, then a WebGPU compute pass fills their material IDs directly on the device before the greedy mesher runs.
         </p>
         <dl class="stats">
           <div class="stats-card">
@@ -106,11 +106,11 @@ export function createDebugWorldMarkup(): string {
           </button>
         </div>
         <pre class="profile-report" data-profile-report>
-Press Start Profile Run, fly around for a bit, then stop to capture your step-20 checkpoint.
+Press Start Profile Run, fly around for a bit, then stop to capture a fresh checkpoint-2 report.
         </pre>
       </div>
       <div class="viewport" data-viewport></div>
-      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. The renderer now binds GPU-generated packed vertex, index, and indirect draw buffers directly, while the CPU mesher sticks around only as a correctness reference and profiling oracle.</p>
+      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. Chunk voxels now get generated on the GPU, while the CPU terrain generator sticks around only as a debug reference for parity checks and spawn-height queries.</p>
     </main>
   `
 }

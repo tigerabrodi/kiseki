@@ -13,9 +13,14 @@ type GpuMapModeStatics = {
   READ: number
 }
 
+type GpuShaderStageStatics = {
+  COMPUTE: number
+}
+
 type GlobalWithWebGpuStatics = typeof globalThis & {
   GPUBufferUsage?: GpuBufferUsageStatics
   GPUMapMode?: GpuMapModeStatics
+  GPUShaderStage?: GpuShaderStageStatics
 }
 
 export function getGpuBufferUsage(): GpuBufferUsageStatics {
@@ -36,4 +41,14 @@ export function getGpuMapMode(): GpuMapModeStatics {
   }
 
   return gpuMapMode
+}
+
+export function getGpuShaderStage(): GpuShaderStageStatics {
+  const gpuShaderStage = (globalThis as GlobalWithWebGpuStatics).GPUShaderStage
+
+  if (gpuShaderStage === undefined) {
+    throw new Error('Kiseki requires WebGPU shader stage statics at runtime')
+  }
+
+  return gpuShaderStage
 }

@@ -5,6 +5,7 @@ import type {
   ProfileReport,
   ProfileSessionState,
 } from '../profiling/ProfileRecorder.ts'
+import type { VoxelMaterialComparison } from '../voxel/compareVoxelMaterials.ts'
 import type { ChunkStreamer } from '../world/ChunkStreamer.ts'
 import type { ChunkCoordinates } from '../world/World.ts'
 
@@ -49,6 +50,10 @@ export type KisekiSceneInfo = {
   hasEnvironment: boolean
 } | null
 
+export type KisekiGpuTerrainInfo = {
+  lastErrorMessage: string | null
+} | null
+
 export type KisekiGpuChunkInfo = {
   byteLength: number
   coords: ChunkCoordinates
@@ -77,8 +82,14 @@ export type KisekiDebugSurface = {
     y: number,
     z: number
   ) => Promise<ChunkMeshComparison | null>
+  compareCpuAndGpuChunkMaterials: (
+    x: number,
+    y: number,
+    z: number
+  ) => Promise<VoxelMaterialComparison | null>
   getGpuChunkInfo: (x: number, y: number, z: number) => KisekiGpuChunkInfo
   getGpuMeshInfo: (x: number, y: number, z: number) => KisekiGpuMeshInfo
+  getGpuTerrainInfo: () => KisekiGpuTerrainInfo
   getMeshInfo: () => KisekiMeshInfo
   getProfileReport: () => ProfileReport | null
   getProfileState: () => ProfileSessionState

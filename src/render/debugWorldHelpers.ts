@@ -82,13 +82,3 @@ export function getJsHeapBytes(): number | null {
 export function bytesToMegabytes(bytes: number): number {
   return bytes / (1024 * 1024)
 }
-
-export function hasAnySolidVoxel(voxels: Uint8Array): boolean {
-  for (const voxel of voxels) {
-    if (voxel !== 0) {
-      return true
-    }
-  }
-
-  return false
-}

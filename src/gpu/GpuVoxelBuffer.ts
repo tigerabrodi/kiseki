@@ -18,13 +18,12 @@ type WebGpuBackendWithDevice = {
   isWebGPUBackend?: boolean
 }
 
-export function createGpuVoxelBuffer(
+function createVoxelBuffer(
   device: GPUDevice,
-  entry: WorldChunkEntry
+  label: string,
+  initialData: Uint32Array
 ): GpuVoxelBufferHandle {
   const gpuBufferUsage = getGpuBufferUsage()
-  const label = `chunk_voxels_${chunkKey(entry.coords)}`
-  const data = encodeChunkVoxelsForGpu(entry.chunk)
   const buffer = device.createBuffer({
     label,
     mappedAtCreation: true,
@@ -35,15 +34,38 @@ export function createGpuVoxelBuffer(
       gpuBufferUsage.COPY_SRC,
   })
 
-  new Uint32Array(buffer.getMappedRange()).set(data)
+  new Uint32Array(buffer.getMappedRange()).set(initialData)
   buffer.unmap()
 
   return {
     buffer,
     byteLength: GPU_VOXEL_BUFFER_BYTE_LENGTH,
     label,
-    voxelCount: data.length,
+    voxelCount: initialData.length,
   }
+}
+
+export function createGpuVoxelBuffer(
+  device: GPUDevice,
+  entry: WorldChunkEntry
+): GpuVoxelBufferHandle {
+  const label = `chunk_voxels_${chunkKey(entry.coords)}`
+  const data = encodeChunkVoxelsForGpu(entry.chunk)
+
+  return createVoxelBuffer(device, label, data)
+}
+
+export function createEmptyGpuVoxelBuffer(
+  device: GPUDevice,
+  coords: ChunkCoordinates
+): GpuVoxelBufferHandle {
+  return createVoxelBuffer(
+    device,
+    `chunk_voxels_${chunkKey(coords)}`,
+    new Uint32Array(
+      GPU_VOXEL_BUFFER_BYTE_LENGTH / Uint32Array.BYTES_PER_ELEMENT
+    )
+  )
 }
 
 export function destroyGpuVoxelBuffer(handle: GpuVoxelBufferHandle): void {
