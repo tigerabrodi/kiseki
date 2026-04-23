@@ -7,9 +7,16 @@ import {
   type FlyInputState,
 } from '../camera/getFlyMovementIntent.ts'
 import { FixedStepLoop } from '../core/FixedStepLoop.ts'
+import {
+  installKisekiDebugSurface,
+  type KisekiDebugStats,
+} from '../debug/installKisekiDebugSurface.ts'
 import { createChunkMesh } from '../mesh/createChunkMesh.ts'
 import { countVisibleChunkMeshes } from './countVisibleChunkMeshes.ts'
-import { ChunkStreamer } from '../world/ChunkStreamer.ts'
+import {
+  ChunkStreamer,
+  worldPositionToChunkCoordinates,
+} from '../world/ChunkStreamer.ts'
 import { chunkKey, chunkOrigin } from '../world/World.ts'
 import { TerrainGenerator } from '../world/TerrainGenerator.ts'
 
@@ -52,6 +59,25 @@ function disposeObject(root: THREE.Object3D): void {
       disposeMaterial(child.material)
     }
   })
+}
+
+function turnCameraByDegrees(
+  camera: THREE.PerspectiveCamera,
+  yawDegrees: number,
+  pitchDegrees = 0
+): void {
+  const rotation = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ')
+  const maxPitchRadians = Math.PI / 2 - 0.01
+
+  rotation.y += THREE.MathUtils.degToRad(yawDegrees)
+  rotation.x = THREE.MathUtils.clamp(
+    rotation.x + THREE.MathUtils.degToRad(pitchDegrees),
+    -maxPitchRadians,
+    maxPitchRadians
+  )
+
+  camera.quaternion.setFromEuler(rotation)
+  camera.updateMatrixWorld()
 }
 
 export async function startDebugWorld(
@@ -223,22 +249,16 @@ export async function startDebugWorld(
     worldGroup.updateMatrixWorld(true)
     drawCalls = nextDrawCalls
     totalFaceCount = nextFaceCount
-    chunkCountValue.textContent = chunkStreamer.world.size().toString()
-    faceCountValue.textContent = totalFaceCount.toString()
-    drawCallsValue.textContent = drawCalls.toString()
-    visibleChunksValue.textContent = countVisibleChunkMeshes(
-      camera,
-      chunkMeshes
-    ).toString()
   }
 
   const syncStreamedWorld = (position: THREE.Vector3): void => {
     const streamUpdate = chunkStreamer.updateFromWorldPosition(position)
-    playerChunkValue.textContent = chunkKey(streamUpdate.playerChunk)
 
     if (streamUpdate.didChange) {
       rebuildWorldMeshes()
     }
+
+    applyStatsToHud()
   }
 
   const spawnX = 16
@@ -253,7 +273,6 @@ export async function startDebugWorld(
   camera.position.copy(initialPosition)
   camera.lookAt(flyTarget)
   camera.updateMatrixWorld()
-  syncStreamedWorld(initialPosition)
 
   const controls = new PointerLockControls(camera, renderer.domElement)
   controls.pointerSpeed = 0.75
@@ -261,6 +280,38 @@ export async function startDebugWorld(
   const inputState = createInputState()
   const previousCameraPosition = initialPosition.clone()
   const currentCameraPosition = initialPosition.clone()
+
+  const buildStatsSnapshot = (): KisekiDebugStats => {
+    const playerChunk = worldPositionToChunkCoordinates(currentCameraPosition)
+
+    return {
+      drawCalls,
+      faceCount: totalFaceCount,
+      loadedChunkCount: chunkStreamer.world.size(),
+      playerChunk,
+      position: {
+        x: currentCameraPosition.x,
+        y: currentCameraPosition.y,
+        z: currentCameraPosition.z,
+      },
+      visibleChunkCount: countVisibleChunkMeshes(camera, chunkMeshes),
+    }
+  }
+
+  const applyStatsToHud = (): void => {
+    const stats = buildStatsSnapshot()
+
+    chunkCountValue.textContent = stats.loadedChunkCount.toString()
+    playerChunkValue.textContent = chunkKey(stats.playerChunk)
+    visibleChunksValue.textContent = stats.visibleChunkCount.toString()
+    positionValue.textContent = `${stats.position.x.toFixed(
+      1
+    )}, ${stats.position.y.toFixed(1)}, ${stats.position.z.toFixed(1)}`
+    faceCountValue.textContent = stats.faceCount.toString()
+    drawCallsValue.textContent = stats.drawCalls.toString()
+  }
+
+  syncStreamedWorld(initialPosition)
 
   const updatePointerState = (): void => {
     pointerStateValue.textContent = controls.isLocked ? 'Locked' : 'Unlocked'
@@ -321,10 +372,28 @@ export async function startDebugWorld(
   updatePointerState()
 
   fixedRateValue.textContent = '60'
-  positionValue.textContent = `${initialPosition.x.toFixed(1)}, ${initialPosition.y.toFixed(
-    1
-  )}, ${initialPosition.z.toFixed(1)}`
+  applyStatsToHud()
   const fixedLoop = new FixedStepLoop({ fixedDeltaSeconds: 1 / 60 })
+
+  const uninstallDebugSurface = installKisekiDebugSurface({
+    camera,
+    chunkStreamer,
+    getStats: buildStatsSnapshot,
+    setCameraPosition: (x: number, y: number, z: number): void => {
+      currentCameraPosition.set(x, y, z)
+      previousCameraPosition.copy(currentCameraPosition)
+      camera.position.copy(currentCameraPosition)
+      camera.updateMatrixWorld()
+      syncStreamedWorld(currentCameraPosition)
+    },
+    syncWorld: (): void => {
+      syncStreamedWorld(currentCameraPosition)
+    },
+    turnCamera: (yawDegrees: number, pitchDegrees = 0): void => {
+      turnCameraByDegrees(camera, yawDegrees, pitchDegrees)
+      applyStatsToHud()
+    },
+  })
 
   const resize = (): void => {
     const width = Math.max(viewport.clientWidth, 1)
@@ -356,6 +425,7 @@ export async function startDebugWorld(
     controls.removeEventListener('lock', handleLock)
     controls.removeEventListener('unlock', handleUnlock)
     lockButton.removeEventListener('click', handleLockButtonClick)
+    uninstallDebugSurface()
     controls.dispose()
     void renderer.dispose()
 
@@ -397,15 +467,6 @@ export async function startDebugWorld(
     camera.updateMatrixWorld()
 
     syncStreamedWorld(currentCameraPosition)
-    positionValue.textContent = `${currentCameraPosition.x.toFixed(
-      1
-    )}, ${currentCameraPosition.y.toFixed(1)}, ${currentCameraPosition.z.toFixed(
-      1
-    )}`
-    visibleChunksValue.textContent = countVisibleChunkMeshes(
-      camera,
-      chunkMeshes
-    ).toString()
     updatePointerState()
 
     void renderer.render(scene, camera)
@@ -419,6 +480,7 @@ export async function startDebugWorld(
     controls.removeEventListener('lock', handleLock)
     controls.removeEventListener('unlock', handleUnlock)
     lockButton.removeEventListener('click', handleLockButtonClick)
+    uninstallDebugSurface()
     controls.dispose()
     disposeObject(scene)
     void renderer.dispose()
