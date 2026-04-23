@@ -90,6 +90,7 @@ select {
   left: 20px;
   z-index: 1;
   width: min(420px, calc(100vw - 32px));
+  max-height: calc(100svh - 40px);
   padding: 20px 22px;
   border: 1px solid var(--line);
   border-radius: 20px;
@@ -98,6 +99,29 @@ select {
     var(--bg-surface);
   backdrop-filter: blur(18px);
   box-shadow: var(--shadow);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.hud::-webkit-scrollbar {
+  width: 10px;
+}
+
+.hud::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.hud::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  background-clip: padding-box;
+}
+
+.hud::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
+  background-clip: padding-box;
 }
 
 .eyebrow,
@@ -290,6 +314,7 @@ select {
   .hud {
     top: 16px;
     left: 16px;
+    max-height: calc(100svh - 32px);
     padding: 18px;
   }
 
