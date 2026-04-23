@@ -13,7 +13,10 @@ type DestroyGpuChunkMesh = (handle: GpuChunkMeshHandle) => void
 
 function getMeshByteLength(handle: GpuChunkMeshHandle): number {
   return (
-    handle.countsByteLength + handle.indexByteLength + handle.vertexByteLength
+    handle.countsByteLength +
+    handle.indirectByteLength +
+    handle.indexByteLength +
+    handle.vertexByteLength
   )
 }
 

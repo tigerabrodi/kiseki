@@ -1,11 +1,17 @@
 import { chunkKey, type WorldChunkEntry } from '../world/World.ts'
 import { GpuChunkMeshCache } from './GpuChunkMeshCache.ts'
 import { type GpuChunkVoxelCache } from './GpuChunkVoxelCache.ts'
-import { destroyGpuChunkMeshHandle, GpuChunkMesher } from './GpuChunkMesher.ts'
+import {
+  destroyGpuChunkMeshHandle,
+  type GpuChunkMeshHandle,
+  GpuChunkMesher,
+} from './GpuChunkMesher.ts'
 
 export function createGpuChunkMeshCache(
   gpuChunkMesher: GpuChunkMesher,
-  gpuVoxelCache: GpuChunkVoxelCache
+  gpuVoxelCache: GpuChunkVoxelCache,
+  createMeshHandle: (entry: WorldChunkEntry) => GpuChunkMeshHandle = (entry) =>
+    gpuChunkMesher.createMeshHandle(entry.coords)
 ): GpuChunkMeshCache {
   return new GpuChunkMeshCache((entry: WorldChunkEntry) => {
     const currentVoxelBuffer = gpuVoxelCache.getBuffer(entry.coords)
@@ -16,7 +22,7 @@ export function createGpuChunkMeshCache(
       )
     }
 
-    const meshHandle = gpuChunkMesher.createMeshHandle(entry.coords)
+    const meshHandle = createMeshHandle(entry)
 
     gpuChunkMesher.meshChunk(meshHandle, currentVoxelBuffer, {
       nx: gpuVoxelCache.getBuffer({

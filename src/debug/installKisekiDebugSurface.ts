@@ -35,8 +35,11 @@ export type KisekiDebugStats = {
 
 export type KisekiMeshInfo = {
   attributeNames: Array<string>
+  hasIndirect: boolean
   indexCount: number
+  indexType: string | null
   materialType: string
+  packedAttributeType: string | null
   vertexCount: number
 } | null
 
@@ -56,6 +59,7 @@ export type KisekiGpuChunkInfo = {
 export type KisekiGpuMeshInfo = {
   coords: ChunkCoordinates
   countByteLength: number
+  indirectByteLength: number
   indexByteLength: number
   label: string
   maxFaceCount: number

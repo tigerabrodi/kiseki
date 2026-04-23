@@ -1,3 +1,5 @@
+import * as THREE from 'three/webgpu'
+
 import type { ChunkFaceDirection } from '../mesh/buildChunkQuads.ts'
 import type { ChunkCoordinates } from '../world/World.ts'
 import { chunkKey } from '../world/World.ts'
@@ -24,6 +26,14 @@ const FACE_DIRECTIONS = [
   'nz',
 ] as const satisfies ReadonlyArray<ChunkFaceDirection>
 const MESHER_PARAM_WORD_COUNT = 4
+const INDEX_COUNT_BYTE_OFFSET = Uint32Array.BYTES_PER_ELEMENT * 2
+
+export const GPU_CHUNK_MESH_INDIRECT_WORD_COUNT = 5
+export const GPU_CHUNK_MESH_INDIRECT_BYTE_LENGTH =
+  GPU_CHUNK_MESH_INDIRECT_WORD_COUNT * Uint32Array.BYTES_PER_ELEMENT
+export const GPU_CHUNK_MESH_INDIRECT_DRAW_TEMPLATE = new Uint32Array([
+  0, 1, 0, 0, 0,
+])
 
 export type GpuVoxelBufferNeighbors = Partial<
   Record<ChunkFaceDirection, GpuVoxelBufferHandle>
@@ -32,12 +42,19 @@ export type GpuVoxelBufferNeighbors = Partial<
 export type GpuChunkMeshHandle = {
   countsBuffer: GPUBuffer
   countsByteLength: number
+  indirectBuffer: GPUBuffer
+  indirectByteLength: number
   indexBuffer: GPUBuffer
   indexByteLength: number
   label: string
   maxFaceCount: number
   maxIndexCount: number
   maxVertexCount: number
+  renderBuffers?: {
+    indirectAttribute: THREE.IndirectStorageBufferAttribute
+    indexAttribute: THREE.StorageBufferAttribute
+    packedDataAttribute: THREE.StorageBufferAttribute
+  }
   vertexBuffer: GPUBuffer
   vertexByteLength: number
 }
@@ -78,7 +95,10 @@ function createZeroVoxelBuffer(device: GPUDevice): GPUBuffer {
 
 function getTotalMeshBytes(handle: GpuChunkMeshHandle): number {
   return (
-    handle.countsByteLength + handle.indexByteLength + handle.vertexByteLength
+    handle.countsByteLength +
+    handle.indirectByteLength +
+    handle.indexByteLength +
+    handle.vertexByteLength
   )
 }
 
@@ -88,6 +108,21 @@ export function createGpuChunkMeshHandle(
 ): GpuChunkMeshHandle {
   const gpuBufferUsage = getGpuBufferUsage()
   const label = `chunk_mesh_${chunkKey(coords)}`
+  const indirectBuffer = device.createBuffer({
+    label: `${label}_indirect`,
+    mappedAtCreation: true,
+    size: GPU_CHUNK_MESH_INDIRECT_BYTE_LENGTH,
+    usage:
+      gpuBufferUsage.INDIRECT |
+      gpuBufferUsage.STORAGE |
+      gpuBufferUsage.COPY_DST |
+      gpuBufferUsage.COPY_SRC,
+  })
+
+  new Uint32Array(indirectBuffer.getMappedRange()).set(
+    GPU_CHUNK_MESH_INDIRECT_DRAW_TEMPLATE
+  )
+  indirectBuffer.unmap()
 
   return {
     countsBuffer: device.createBuffer({
@@ -99,6 +134,8 @@ export function createGpuChunkMeshHandle(
         gpuBufferUsage.COPY_SRC,
     }),
     countsByteLength: GPU_CHUNK_MESH_COUNTER_BYTE_LENGTH,
+    indirectBuffer,
+    indirectByteLength: GPU_CHUNK_MESH_INDIRECT_BYTE_LENGTH,
     indexBuffer: device.createBuffer({
       label: `${label}_indices`,
       size: GPU_CHUNK_MESH_INDEX_BYTE_LENGTH,
@@ -124,8 +161,11 @@ export function createGpuChunkMeshHandle(
 
 export function destroyGpuChunkMeshHandle(handle: GpuChunkMeshHandle): void {
   handle.countsBuffer.destroy()
-  handle.indexBuffer.destroy()
-  handle.vertexBuffer.destroy()
+  if (handle.renderBuffers === undefined) {
+    handle.indirectBuffer.destroy()
+    handle.indexBuffer.destroy()
+    handle.vertexBuffer.destroy()
+  }
 }
 
 export async function readGpuChunkMeshCounts(
@@ -180,6 +220,7 @@ export function getGpuChunkMeshInfo(
 ): {
   coords: ChunkCoordinates
   countByteLength: number
+  indirectByteLength: number
   indexByteLength: number
   label: string
   maxFaceCount: number
@@ -195,6 +236,7 @@ export function getGpuChunkMeshInfo(
   return {
     coords: { ...coords },
     countByteLength: handle.countsByteLength,
+    indirectByteLength: handle.indirectByteLength,
     indexByteLength: handle.indexByteLength,
     label: handle.label,
     maxFaceCount: handle.maxFaceCount,
@@ -271,6 +313,11 @@ export class GpuChunkMesher {
     })
 
     this.device.queue.writeBuffer(handle.countsBuffer, 0, ZERO_MESH_COUNTERS)
+    this.device.queue.writeBuffer(
+      handle.indirectBuffer,
+      0,
+      GPU_CHUNK_MESH_INDIRECT_DRAW_TEMPLATE
+    )
 
     for (const [
       faceDirectionIndex,
@@ -327,6 +374,14 @@ export class GpuChunkMesher {
       pass.dispatchWorkgroups(1)
       pass.end()
     }
+
+    encoder.copyBufferToBuffer(
+      handle.countsBuffer,
+      INDEX_COUNT_BYTE_OFFSET,
+      handle.indirectBuffer,
+      0,
+      Uint32Array.BYTES_PER_ELEMENT
+    )
 
     this.device.queue.submit([encoder.finish()])
   }

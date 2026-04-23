@@ -2,10 +2,10 @@ export function createDebugWorldMarkup(): string {
   return `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Step 18</p>
-        <h1 class="title">GPU Binary Greedy Meshing</h1>
+        <p class="eyebrow">Kiseki / Step 19</p>
+        <h1 class="title">GPU Mesh Rendering</h1>
         <p class="subtitle">
-          CPU terrain still generates and renders the world for now, but every streamed chunk also runs the binary greedy mesher as a WebGPU compute pass into packed vertex and index buffers so we can prove parity before step 19 hooks them into the renderer.
+          CPU terrain still generates voxels for now, but the live world render now binds the packed vertex, index, and indirect draw buffers written by the WebGPU greedy mesher instead of rebuilding BufferGeometry data on the CPU.
         </p>
         <dl class="stats">
           <div class="stats-card">
@@ -106,11 +106,11 @@ export function createDebugWorldMarkup(): string {
           </button>
         </div>
         <pre class="profile-report" data-profile-report>
-Press Start Profile Run, fly around for a bit, then stop to capture your step-18 baseline.
+Press Start Profile Run, fly around for a bit, then stop to capture your step-19 baseline.
         </pre>
       </div>
       <div class="viewport" data-viewport></div>
-      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. The scene still renders from the CPU mesher today, but each loaded chunk now also owns GPU-computed packed mesh buffers that we can read back and compare against the CPU reference.</p>
+      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. The renderer now binds GPU-generated packed vertex, index, and indirect draw buffers directly, while the CPU mesher sticks around only as a correctness reference.</p>
     </main>
   `
 }

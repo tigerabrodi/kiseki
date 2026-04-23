@@ -12,6 +12,8 @@ function createMeshHandle(
   return {
     countsBuffer: {} as GPUBuffer,
     countsByteLength: 16,
+    indirectBuffer: {} as GPUBuffer,
+    indirectByteLength: 20,
     indexBuffer: {} as GPUBuffer,
     indexByteLength: byteLength,
     label,
@@ -49,7 +51,7 @@ describe('GpuChunkMeshCache', () => {
     expect(createMesh).toHaveBeenCalledTimes(2)
     expect(cache.size()).toBe(2)
     expect(cache.getMesh(entryA.coords)?.label).toBe('mesh_0,0,0')
-    expect(cache.totalBytes()).toBe((16 + 48 + 24) * 2)
+    expect(cache.totalBytes()).toBe((16 + 20 + 48 + 24) * 2)
     expect(destroyMesh).not.toHaveBeenCalled()
   })
 

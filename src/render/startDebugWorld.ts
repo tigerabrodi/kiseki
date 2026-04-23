@@ -2,10 +2,7 @@ import * as THREE from 'three/webgpu'
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js'
 import WebGPU from 'three/addons/capabilities/WebGPU.js'
 
-import {
-  getFlyMovementIntent,
-  type FlyInputState,
-} from '../camera/getFlyMovementIntent.ts'
+import { getFlyMovementIntent } from '../camera/getFlyMovementIntent.ts'
 import { FixedStepLoop } from '../core/FixedStepLoop.ts'
 import {
   installKisekiDebugSurface,
@@ -13,6 +10,7 @@ import {
 } from '../debug/installKisekiDebugSurface.ts'
 import { GpuChunkMeshCache } from '../gpu/GpuChunkMeshCache.ts'
 import { createGpuChunkMeshCache } from '../gpu/createGpuChunkMeshCache.ts'
+import { createRendererBackedGpuChunkMeshHandle } from '../gpu/createRendererBackedGpuChunkMeshHandle.ts'
 import { GpuChunkVoxelCache } from '../gpu/GpuChunkVoxelCache.ts'
 import {
   createGpuVoxelBuffer,
@@ -25,8 +23,8 @@ import {
   GpuChunkMesher,
   getGpuChunkMeshInfo,
   readGpuChunkMesh,
+  readGpuChunkMeshCounts,
 } from '../gpu/GpuChunkMesher.ts'
-import { createChunkMesh } from '../mesh/createChunkMesh.ts'
 import { buildChunkGeometryData } from '../mesh/buildChunkGeometryData.ts'
 import { compareChunkMeshes } from '../mesh/compareChunkMeshes.ts'
 import {
@@ -34,7 +32,17 @@ import {
   formatProfileReport,
 } from '../profiling/ProfileRecorder.ts'
 import { createDebugWorldMarkup } from './createDebugWorldMarkup.ts'
+import { createGpuChunkRenderMesh } from './createGpuChunkRenderMesh.ts'
 import { createVoxelChunkMaterial } from './createVoxelChunkMaterial.ts'
+import {
+  bytesToMegabytes,
+  createInputState,
+  disposeMeshGeometries,
+  getJsHeapBytes,
+  getSceneBackgroundType,
+  hasAnySolidVoxel,
+  turnCameraByDegrees,
+} from './debugWorldHelpers.ts'
 import { getDebugWorldElements } from './getDebugWorldElements.ts'
 import { countVisibleChunkMeshes } from './countVisibleChunkMeshes.ts'
 import { loadHdrEnvironment } from './loadHdrEnvironment.ts'
@@ -52,79 +60,6 @@ type DisposableMesh = THREE.Mesh<
   THREE.BufferGeometry,
   THREE.Material | Array<THREE.Material>
 >
-type PerformanceWithMemory = Performance & {
-  memory?: {
-    usedJSHeapSize: number
-  }
-}
-
-function createInputState(): FlyInputState {
-  return {
-    backward: false,
-    down: false,
-    forward: false,
-    left: false,
-    right: false,
-    up: false,
-  }
-}
-
-function isDisposableMesh(object: THREE.Object3D): object is DisposableMesh {
-  return object instanceof THREE.Mesh
-}
-
-function getSceneBackgroundType(
-  background: THREE.Color | THREE.Texture | null
-): string {
-  if (background === null) {
-    return 'none'
-  }
-
-  if (background instanceof THREE.Color) {
-    return 'Color'
-  }
-
-  return background.constructor.name
-}
-
-function disposeMeshGeometries(root: THREE.Object3D): void {
-  root.traverse((child: THREE.Object3D) => {
-    if (!isDisposableMesh(child)) {
-      return
-    }
-
-    child.geometry.dispose()
-  })
-}
-
-function turnCameraByDegrees(
-  camera: THREE.PerspectiveCamera,
-  yawDegrees: number,
-  pitchDegrees = 0
-): void {
-  const rotation = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ')
-  const maxPitchRadians = Math.PI / 2 - 0.01
-
-  rotation.y += THREE.MathUtils.degToRad(yawDegrees)
-  rotation.x = THREE.MathUtils.clamp(
-    rotation.x + THREE.MathUtils.degToRad(pitchDegrees),
-    -maxPitchRadians,
-    maxPitchRadians
-  )
-
-  camera.quaternion.setFromEuler(rotation)
-  camera.updateMatrixWorld()
-}
-
-function getJsHeapBytes(): number | null {
-  const performanceWithMemory = performance as PerformanceWithMemory
-
-  return performanceWithMemory.memory?.usedJSHeapSize ?? null
-}
-
-function bytesToMegabytes(bytes: number): number {
-  return bytes / (1024 * 1024)
-}
 
 export async function startDebugWorld(
   root: HTMLElement
@@ -202,6 +137,7 @@ export async function startDebugWorld(
   let worldGroup = new THREE.Group()
   scene.add(worldGroup)
   let chunkMeshes: Array<DisposableMesh> = []
+  let chunkMeshMap = new Map<string, DisposableMesh>()
   let drawCalls = 0
   let totalFaceCount = 0
   let totalTriangleCount = 0
@@ -216,58 +152,114 @@ export async function startDebugWorld(
   let gpuChunkMesher: GpuChunkMesher | null = null
   let gpuChunkMeshCache: GpuChunkMeshCache | null = null
   let gpuVoxelCache: GpuChunkVoxelCache | null = null
+  let gpuMeshStatsRefreshToken = 0
   let pendingGpuTimestampResolve: Promise<void> | null = null
   let renderFramesSinceGpuResolve = 0
   const profileRecorder = new ProfileRecorder()
 
-  const rebuildWorldMeshes = (): void => {
-    const rebuildStartMs = performance.now()
-
-    scene.remove(worldGroup)
-    disposeMeshGeometries(worldGroup)
-
-    const nextWorldGroup = new THREE.Group()
-    const nextChunkMeshes: Array<DisposableMesh> = []
-    let nextDrawCalls = 0
-    let nextFaceCount = 0
-    let nextTriangleCount = 0
-    const activeMaterial = voxelChunkMaterial
-
-    if (activeMaterial === null) {
+  const refreshGpuMeshStats = async (): Promise<void> => {
+    if (gpuDevice === null || gpuChunkMeshCache === null) {
       return
     }
 
-    for (const entry of chunkStreamer.world.entries()) {
-      const chunkMesh = createChunkMesh(
-        entry.chunk,
-        activeMaterial,
-        chunkStreamer.world.getChunkNeighbors(entry.coords)
-      )
+    const activeGpuDevice = gpuDevice
+    const refreshToken = ++gpuMeshStatsRefreshToken
+    const entries = chunkStreamer.world.entries()
+    const meshCounts = await Promise.all(
+      entries.map(async (entry) => {
+        const handle = gpuChunkMeshCache?.getMesh(entry.coords)
 
-      if (chunkMesh.solidCount === 0) {
-        chunkMesh.mesh.geometry.dispose()
+        if (handle === undefined) {
+          return null
+        }
+
+        return {
+          counts: await readGpuChunkMeshCounts(activeGpuDevice, handle),
+          key: chunkKey(entry.coords),
+        }
+      })
+    )
+
+    if (refreshToken !== gpuMeshStatsRefreshToken) {
+      return
+    }
+
+    let nextDrawCalls = 0
+    let nextFaceCount = 0
+    let nextTriangleCount = 0
+
+    for (const meshCount of meshCounts) {
+      if (meshCount === null) {
         continue
       }
 
+      const isRenderable = meshCount.counts.indexCount > 0
+
+      nextFaceCount += meshCount.counts.faceCount
+      nextTriangleCount += meshCount.counts.indexCount / 3
+      nextDrawCalls += isRenderable ? 1 : 0
+
+      const mesh = chunkMeshMap.get(meshCount.key)
+
+      if (mesh !== undefined) {
+        mesh.visible = isRenderable
+      }
+    }
+
+    drawCalls = nextDrawCalls
+    totalFaceCount = nextFaceCount
+    totalTriangleCount = nextTriangleCount
+    applyStatsToHud()
+  }
+
+  const rebuildWorldMeshes = (): void => {
+    const rebuildStartMs = performance.now()
+    const activeMaterial = voxelChunkMaterial
+    const activeGpuChunkMeshCache = gpuChunkMeshCache
+
+    scene.remove(worldGroup)
+    disposeMeshGeometries(worldGroup)
+    chunkMeshMap = new Map()
+
+    if (activeMaterial === null || activeGpuChunkMeshCache === null) {
+      return
+    }
+
+    activeGpuChunkMeshCache.rebuild(chunkStreamer.world.entries())
+
+    const nextWorldGroup = new THREE.Group()
+    const nextChunkMeshes: Array<DisposableMesh> = []
+
+    for (const entry of chunkStreamer.world.entries()) {
+      if (!hasAnySolidVoxel(entry.chunk.voxels)) {
+        continue
+      }
+
+      const chunkHandle = activeGpuChunkMeshCache.getMesh(entry.coords)
+
+      if (chunkHandle === undefined) {
+        continue
+      }
+
+      const chunkMesh = createGpuChunkRenderMesh(chunkHandle, activeMaterial)
       const origin = chunkOrigin(entry.coords)
 
       chunkMesh.mesh.position.set(origin.x, origin.y, origin.z)
       nextWorldGroup.add(chunkMesh.mesh)
       nextChunkMeshes.push(chunkMesh.mesh)
-      nextDrawCalls += chunkMesh.drawCalls
-      nextFaceCount += chunkMesh.faceCount
-      nextTriangleCount += chunkMesh.triangleCount
+      chunkMeshMap.set(chunkKey(entry.coords), chunkMesh.mesh)
     }
 
     worldGroup = nextWorldGroup
     chunkMeshes = nextChunkMeshes
     scene.add(worldGroup)
     worldGroup.updateMatrixWorld(true)
-    drawCalls = nextDrawCalls
-    totalFaceCount = nextFaceCount
-    totalTriangleCount = nextTriangleCount
+    drawCalls = 0
+    totalFaceCount = 0
+    totalTriangleCount = 0
     lastMeshGenerationTimeMs = performance.now() - rebuildStartMs
     profileRecorder.recordMeshGeneration(lastMeshGenerationTimeMs)
+    void refreshGpuMeshStats()
   }
 
   const syncGpuVoxelBuffers = (
@@ -276,24 +268,11 @@ export async function startDebugWorld(
     gpuVoxelCache?.sync(update)
   }
 
-  const rebuildGpuChunkMeshes = (): void => {
-    if (
-      gpuChunkMesher === null ||
-      gpuChunkMeshCache === null ||
-      gpuVoxelCache === null
-    ) {
-      return
-    }
-
-    gpuChunkMeshCache.rebuild(chunkStreamer.world.entries())
-  }
-
   const syncStreamedWorld = (position: THREE.Vector3): void => {
     const streamUpdate = chunkStreamer.updateFromWorldPosition(position)
 
     if (streamUpdate.didChange) {
       syncGpuVoxelBuffers(streamUpdate)
-      rebuildGpuChunkMeshes()
       rebuildWorldMeshes()
     }
 
@@ -382,7 +361,7 @@ export async function startDebugWorld(
     }
 
     profileReportValue.textContent =
-      'Press Start Profile Run, fly around for a bit, then stop to capture your step-18 baseline.'
+      'Press Start Profile Run, fly around for a bit, then stop to capture your step-19 baseline.'
   }
 
   const applyStatsToHud = (): void => {
@@ -584,10 +563,14 @@ export async function startDebugWorld(
 
       return {
         attributeNames: Object.keys(firstMesh.geometry.attributes),
+        hasIndirect: firstMesh.geometry.indirect !== null,
         indexCount: firstMesh.geometry.index?.count ?? 0,
+        indexType: firstMesh.geometry.index?.constructor.name ?? null,
         materialType: Array.isArray(firstMesh.material)
           ? 'ArrayMaterial'
           : firstMesh.material.type,
+        packedAttributeType:
+          firstMesh.geometry.attributes.packedData?.constructor.name ?? null,
         vertexCount: firstMesh.geometry.attributes.packedData?.count ?? 0,
       }
     },
@@ -661,7 +644,11 @@ export async function startDebugWorld(
       return createGpuVoxelBuffer(gpuDevice, entry)
     }, destroyGpuVoxelBuffer)
     gpuChunkMesher = new GpuChunkMesher(gpuDevice)
-    gpuChunkMeshCache = createGpuChunkMeshCache(gpuChunkMesher, gpuVoxelCache)
+    gpuChunkMeshCache = createGpuChunkMeshCache(
+      gpuChunkMesher,
+      gpuVoxelCache,
+      (entry) => createRendererBackedGpuChunkMeshHandle(renderer, entry.coords)
+    )
     statusValue.textContent = 'Loading assets'
     const [atlas, hdrEnvironment] = await Promise.all([
       loadVoxelTextureAtlas(renderer),

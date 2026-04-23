@@ -1,6 +1,7 @@
 type GpuBufferUsageStatics = {
   COPY_DST: number
   COPY_SRC: number
+  INDIRECT: number
   INDEX: number
   MAP_READ: number
   STORAGE: number
