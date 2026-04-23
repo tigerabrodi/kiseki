@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu'
 
+import type { ChunkMeshComparison } from '../mesh/compareChunkMeshes.ts'
 import type {
   ProfileReport,
   ProfileSessionState,
@@ -18,6 +19,8 @@ export type KisekiDebugStats = {
   drawCalls: number
   faceCount: number
   fps: number
+  gpuMeshBufferBytes: number
+  gpuMeshBufferCount: number
   gpuVoxelBufferBytes: number
   gpuVoxelBufferCount: number
   gpuTimeMs: number | null
@@ -50,10 +53,28 @@ export type KisekiGpuChunkInfo = {
   voxelCount: number
 } | null
 
+export type KisekiGpuMeshInfo = {
+  coords: ChunkCoordinates
+  countByteLength: number
+  indexByteLength: number
+  label: string
+  maxFaceCount: number
+  maxIndexCount: number
+  maxVertexCount: number
+  totalByteLength: number
+  vertexByteLength: number
+} | null
+
 export type KisekiDebugSurface = {
   camera: THREE.PerspectiveCamera
   chunkStreamer: ChunkStreamer
+  compareCpuAndGpuChunkMesh: (
+    x: number,
+    y: number,
+    z: number
+  ) => Promise<ChunkMeshComparison | null>
   getGpuChunkInfo: (x: number, y: number, z: number) => KisekiGpuChunkInfo
+  getGpuMeshInfo: (x: number, y: number, z: number) => KisekiGpuMeshInfo
   getMeshInfo: () => KisekiMeshInfo
   getProfileReport: () => ProfileReport | null
   getProfileState: () => ProfileSessionState

@@ -11,46 +11,11 @@ import {
   GPU_VOXEL_BUFFER_BYTE_LENGTH,
 } from './voxelStorageCodec.ts'
 import type { GpuVoxelBufferHandle } from './GpuChunkVoxelCache.ts'
+import { getGpuBufferUsage, getGpuMapMode } from './webGpuStatics.ts'
 
 type WebGpuBackendWithDevice = {
   device?: GPUDevice
   isWebGPUBackend?: boolean
-}
-
-type GpuBufferUsageStatics = {
-  COPY_DST: number
-  COPY_SRC: number
-  MAP_READ: number
-  STORAGE: number
-}
-
-type GpuMapModeStatics = {
-  READ: number
-}
-
-type GlobalWithWebGpuStatics = typeof globalThis & {
-  GPUBufferUsage?: GpuBufferUsageStatics
-  GPUMapMode?: GpuMapModeStatics
-}
-
-function getGpuBufferUsage(): GpuBufferUsageStatics {
-  const gpuBufferUsage = (globalThis as GlobalWithWebGpuStatics).GPUBufferUsage
-
-  if (gpuBufferUsage === undefined) {
-    throw new Error('Kiseki requires WebGPU buffer usage statics at runtime')
-  }
-
-  return gpuBufferUsage
-}
-
-function getGpuMapMode(): GpuMapModeStatics {
-  const gpuMapMode = (globalThis as GlobalWithWebGpuStatics).GPUMapMode
-
-  if (gpuMapMode === undefined) {
-    throw new Error('Kiseki requires WebGPU map mode statics at runtime')
-  }
-
-  return gpuMapMode
 }
 
 export function createGpuVoxelBuffer(
@@ -103,6 +68,10 @@ export async function readGpuBufferToUint32Array(
   byteLength: number,
   label = 'gpu_buffer'
 ): Promise<Uint32Array> {
+  if (byteLength === 0) {
+    return new Uint32Array()
+  }
+
   const gpuBufferUsage = getGpuBufferUsage()
   const gpuMapMode = getGpuMapMode()
   const readbackBuffer = device.createBuffer({
