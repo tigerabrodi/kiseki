@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { ProfileRecorder, formatProfileReport } from './ProfileRecorder.ts'
 
 describe('ProfileRecorder', () => {
-  it('aggregates frame and mesh session metrics into a baseline report', () => {
+  it('aggregates frame and mesh session metrics into a checkpoint report', () => {
     const recorder = new ProfileRecorder()
 
     recorder.start(1000)
@@ -17,7 +17,7 @@ describe('ProfileRecorder', () => {
       triangleCount: 20000,
     })
     recorder.recordGpuTime(1.5)
-    recorder.recordMeshGeneration(8)
+    recorder.recordMeshGeneration(8, 32)
     recorder.recordFrame({
       chunkCount: 36,
       cpuTimeMs: 4,
@@ -72,6 +72,18 @@ describe('ProfileRecorder', () => {
         samples: 1,
         total: 8,
       },
+      meshGenerationChunkCount: {
+        average: 32,
+        max: 32,
+        min: 32,
+        samples: 1,
+      },
+      meshGenerationPerChunkMs: {
+        average: 0.25,
+        max: 0.25,
+        min: 0.25,
+        samples: 1,
+      },
       memory: {
         gpuBytes: {
           average: 5120,
@@ -107,6 +119,8 @@ describe('ProfileRecorder', () => {
 
     expect(report?.gpuTimeMs).toBeNull()
     expect(report?.memory.jsHeapBytes).toBeNull()
+    expect(report?.meshGenerationChunkCount.average).toBe(0)
+    expect(report?.meshGenerationPerChunkMs.average).toBe(0)
     expect(report?.meshGenerationTimeMs.total).toBe(0)
   })
 
@@ -129,9 +143,11 @@ describe('ProfileRecorder', () => {
 
     expect(report).not.toBeNull()
     expect(formatProfileReport(report!)).toContain(
-      'Kiseki Profile Checkpoint 1'
+      'Kiseki Profile Checkpoint 2'
     )
     expect(formatProfileReport(report!)).toContain('FPS avg/min/max')
+    expect(formatProfileReport(report!)).toContain('CPU @60Hz budget avg/max')
+    expect(formatProfileReport(report!)).toContain('Mesh ms/chunk avg/min/max')
     expect(formatProfileReport(report!)).toContain('GPU memory avg/max')
   })
 })

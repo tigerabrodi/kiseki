@@ -32,6 +32,8 @@ export type ProfileReport = {
   frameCount: number
   gpuTimeMs: ProfileMetricSummary | null
   memory: ProfileMemorySummary
+  meshGenerationChunkCount: ProfileMetricSummary
+  meshGenerationPerChunkMs: ProfileMetricSummary
   meshGenerationTimeMs: ProfileMeshGenerationSummary
   triangleCount: ProfileMetricSummary
 }
@@ -87,17 +89,21 @@ class MetricAccumulator {
 
 export function formatProfileReport(report: ProfileReport): string {
   const lines = [
-    'Kiseki Profile Checkpoint 1',
+    'Kiseki Profile Checkpoint 2',
     `Duration: ${report.durationSeconds.toFixed(1)} s`,
     `Frames: ${report.frameCount}`,
     `FPS avg/min/max: ${formatMetric(report.fps)}`,
     `Chunks avg/min/max: ${formatMetric(report.chunkCount, 1)}`,
     `Triangles avg/min/max: ${formatMetric(report.triangleCount, 1)}`,
     `CPU ms avg/min/max: ${formatMetric(report.cpuTimeMs)}`,
+    `CPU @60Hz budget avg/max: ${formatFrameBudgetUsage(report.cpuTimeMs)}`,
     `GPU ms avg/min/max: ${
       report.gpuTimeMs === null ? 'Unavailable' : formatMetric(report.gpuTimeMs)
     }`,
+    `Mesh rebuilds: ${report.meshGenerationTimeMs.samples}`,
+    `Mesh chunks avg/min/max: ${formatMetric(report.meshGenerationChunkCount, 1)}`,
     `Mesh ms avg/max/total: ${report.meshGenerationTimeMs.average.toFixed(2)} / ${report.meshGenerationTimeMs.max.toFixed(2)} / ${report.meshGenerationTimeMs.total.toFixed(2)}`,
+    `Mesh ms/chunk avg/min/max: ${formatMetric(report.meshGenerationPerChunkMs)}`,
     `GPU memory avg/max: ${formatBytes(report.memory.gpuBytes.average)} / ${formatBytes(report.memory.gpuBytes.max)}`,
     `JS heap avg/max: ${
       report.memory.jsHeapBytes === null
@@ -135,6 +141,15 @@ function formatMetric(
   )} / ${metric.max.toFixed(fractionDigits)}`
 }
 
+function formatFrameBudgetUsage(metric: ProfileMetricSummary): string {
+  const frameBudgetMs = 1000 / 60
+
+  return `${((metric.average / frameBudgetMs) * 100).toFixed(1)}% / ${(
+    (metric.max / frameBudgetMs) *
+    100
+  ).toFixed(1)}%`
+}
+
 export class ProfileRecorder {
   private readonly chunkCount = new MetricAccumulator()
   private readonly cpuTimeMs = new MetricAccumulator()
@@ -142,6 +157,8 @@ export class ProfileRecorder {
   private readonly gpuMemoryBytes = new MetricAccumulator()
   private readonly gpuTimeMs = new MetricAccumulator()
   private readonly jsHeapBytes = new MetricAccumulator()
+  private readonly meshGenerationChunkCount = new MetricAccumulator()
+  private readonly meshGenerationPerChunkMs = new MetricAccumulator()
   private readonly meshGenerationTimeMs = new MetricAccumulator()
   private readonly triangleCount = new MetricAccumulator()
 
@@ -191,12 +208,17 @@ export class ProfileRecorder {
     this.gpuTimeMs.add(durationMs)
   }
 
-  recordMeshGeneration(durationMs: number): void {
+  recordMeshGeneration(durationMs: number, chunkCount: number): void {
     if (!this.isRecordingSession) {
       return
     }
 
     this.meshGenerationTimeMs.add(durationMs)
+
+    if (chunkCount > 0) {
+      this.meshGenerationChunkCount.add(chunkCount)
+      this.meshGenerationPerChunkMs.add(durationMs / chunkCount)
+    }
   }
 
   start(nowMs: number): void {
@@ -229,6 +251,8 @@ export class ProfileRecorder {
             ? null
             : this.jsHeapBytes.summary(),
       },
+      meshGenerationChunkCount: this.meshGenerationChunkCount.summary(),
+      meshGenerationPerChunkMs: this.meshGenerationPerChunkMs.summary(),
       meshGenerationTimeMs: {
         ...this.meshGenerationTimeMs.summary(),
         total: this.meshGenerationTimeMs.totalValue(),
@@ -248,6 +272,8 @@ export class ProfileRecorder {
     this.gpuMemoryBytes.reset()
     this.gpuTimeMs.reset()
     this.jsHeapBytes.reset()
+    this.meshGenerationChunkCount.reset()
+    this.meshGenerationPerChunkMs.reset()
     this.meshGenerationTimeMs.reset()
     this.triangleCount.reset()
   }

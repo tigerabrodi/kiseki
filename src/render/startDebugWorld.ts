@@ -254,11 +254,11 @@ export async function startDebugWorld(
     chunkMeshes = nextChunkMeshes
     scene.add(worldGroup)
     worldGroup.updateMatrixWorld(true)
-    drawCalls = 0
-    totalFaceCount = 0
-    totalTriangleCount = 0
     lastMeshGenerationTimeMs = performance.now() - rebuildStartMs
-    profileRecorder.recordMeshGeneration(lastMeshGenerationTimeMs)
+    profileRecorder.recordMeshGeneration(
+      lastMeshGenerationTimeMs,
+      chunkStreamer.world.size()
+    )
     void refreshGpuMeshStats()
   }
 
@@ -339,14 +339,14 @@ export async function startDebugWorld(
     profileStateValue.textContent = profileLabel
 
     profileButton.textContent = profileState.isRecording
-      ? 'Stop & Save Baseline'
+      ? 'Stop & Save Checkpoint'
       : 'Start Profile Run'
     copyProfileButton.disabled =
       profileState.isRecording || profileState.lastReport === null
 
     if (profileState.isRecording) {
       profileReportValue.textContent = [
-        'Recording baseline...',
+        'Recording checkpoint 2...',
         `Elapsed: ${profileState.elapsedSeconds.toFixed(1)} s`,
         'Fly around, stream some chunks, then stop to save the checkpoint.',
       ].join('\n')
@@ -361,7 +361,7 @@ export async function startDebugWorld(
     }
 
     profileReportValue.textContent =
-      'Press Start Profile Run, fly around for a bit, then stop to capture your step-19 baseline.'
+      'Press Start Profile Run, fly around for a bit, then stop to capture your step-20 checkpoint.'
   }
 
   const applyStatsToHud = (): void => {
