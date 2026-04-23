@@ -28,10 +28,17 @@ export type KisekiMeshInfo = {
   vertexCount: number
 } | null
 
+export type KisekiSceneInfo = {
+  backgroundType: string
+  environmentName: string | null
+  hasEnvironment: boolean
+} | null
+
 export type KisekiDebugSurface = {
   camera: THREE.PerspectiveCamera
   chunkStreamer: ChunkStreamer
   getMeshInfo: () => KisekiMeshInfo
+  getSceneInfo: () => KisekiSceneInfo
   getStats: () => KisekiDebugStats
   setCameraPosition: (x: number, y: number, z: number) => void
   syncWorld: () => void

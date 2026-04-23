@@ -14,6 +14,7 @@ import {
 import { createChunkMesh } from '../mesh/createChunkMesh.ts'
 import { createVoxelChunkMaterial } from './createVoxelChunkMaterial.ts'
 import { countVisibleChunkMeshes } from './countVisibleChunkMeshes.ts'
+import { loadHdrEnvironment } from './loadHdrEnvironment.ts'
 import { loadVoxelTextureAtlas } from './loadVoxelTextureAtlas.ts'
 import {
   ChunkStreamer,
@@ -41,6 +42,20 @@ function createInputState(): FlyInputState {
 
 function isDisposableMesh(object: THREE.Object3D): object is DisposableMesh {
   return object instanceof THREE.Mesh
+}
+
+function getSceneBackgroundType(
+  background: THREE.Color | THREE.Texture | null
+): string {
+  if (background === null) {
+    return 'none'
+  }
+
+  if (background instanceof THREE.Color) {
+    return 'Color'
+  }
+
+  return background.constructor.name
 }
 
 function disposeMeshGeometries(root: THREE.Object3D): void {
@@ -78,10 +93,10 @@ export async function startDebugWorld(
   root.innerHTML = `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Step 14</p>
-        <h1 class="title">Texture Arrays And Packed Vertices</h1>
+        <p class="eyebrow">Kiseki / Step 15</p>
+        <h1 class="title">HDR Environment Lighting</h1>
         <p class="subtitle">
-          Greedy quads now stream through a single packed Uint32 vertex path, while the shader samples layered KTX2 materials directly on the GPU.
+          A Poly Haven outdoor HDRI now drives the ambient light, so the packed voxel material finally picks up image-based lighting instead of only relying on our debug lights.
         </p>
         <dl class="stats">
           <div class="stats-card">
@@ -138,7 +153,7 @@ export async function startDebugWorld(
         </button>
       </div>
       <div class="viewport" data-viewport></div>
-      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. WebGPU now decodes packed chunk vertices and samples layered KTX2 materials with nearest magnification and mip-filtered distance.</p>
+      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. The terrain is still the same step-14 mesh, but it now sits under a 2K outdoor HDR sky for proper image-based ambient response.</p>
     </main>
   `
 
@@ -201,18 +216,20 @@ export async function startDebugWorld(
 
   const scene = new THREE.Scene()
   scene.background = new THREE.Color(0x04060b)
-  scene.fog = new THREE.Fog(0x04060b, 64, 180)
+  scene.backgroundBlurriness = 0.18
+  scene.backgroundIntensity = 0.45
+  scene.environmentIntensity = 0.9
 
   const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 200)
   const movementSpeed = 8
 
-  scene.add(new THREE.AmbientLight(0xf4efe4, 1.6))
+  scene.add(new THREE.AmbientLight(0xf4efe4, 0.45))
 
-  const keyLight = new THREE.DirectionalLight(0xf6d6a7, 2.6)
+  const keyLight = new THREE.DirectionalLight(0xf6d6a7, 1.7)
   keyLight.position.set(14, 18, 8)
   scene.add(keyLight)
 
-  const fillLight = new THREE.DirectionalLight(0x6eb7ff, 1.2)
+  const fillLight = new THREE.DirectionalLight(0x6eb7ff, 0.55)
   fillLight.position.set(-10, 8, -12)
   scene.add(fillLight)
 
@@ -229,7 +246,9 @@ export async function startDebugWorld(
   let totalFaceCount = 0
   let totalTriangleCount = 0
   let smoothedFps = 60
+  let hdrEnvironmentName: string | null = null
   let voxelChunkMaterial: THREE.MeshStandardNodeMaterial | null = null
+  let disposeHdrEnvironment = (): void => {}
 
   const rebuildWorldMeshes = (): void => {
     scene.remove(worldGroup)
@@ -424,6 +443,11 @@ export async function startDebugWorld(
         vertexCount: firstMesh.geometry.attributes.packedData?.count ?? 0,
       }
     },
+    getSceneInfo: () => ({
+      backgroundType: getSceneBackgroundType(scene.background),
+      environmentName: hdrEnvironmentName,
+      hasEnvironment: scene.environment !== null,
+    }),
     getStats: buildStatsSnapshot,
     setCameraPosition: (x: number, y: number, z: number): void => {
       currentCameraPosition.set(x, y, z)
@@ -455,9 +479,16 @@ export async function startDebugWorld(
 
   try {
     await renderer.init()
-    statusValue.textContent = 'Loading texture arrays'
-    const atlas = await loadVoxelTextureAtlas(renderer)
+    statusValue.textContent = 'Loading assets'
+    const [atlas, hdrEnvironment] = await Promise.all([
+      loadVoxelTextureAtlas(renderer),
+      loadHdrEnvironment(renderer),
+    ])
     voxelChunkMaterial = createVoxelChunkMaterial(atlas)
+    scene.background = hdrEnvironment.backgroundTexture
+    scene.environment = hdrEnvironment.environmentTexture
+    hdrEnvironmentName = hdrEnvironment.environmentName
+    disposeHdrEnvironment = hdrEnvironment.dispose
     statusValue.textContent = 'WebGPU ready'
   } catch (error) {
     statusValue.textContent = 'Renderer setup failed'
@@ -476,6 +507,7 @@ export async function startDebugWorld(
     lockButton.removeEventListener('click', handleLockButtonClick)
     uninstallDebugSurface()
     controls.dispose()
+    disposeHdrEnvironment()
     voxelChunkMaterial?.dispose()
     void renderer.dispose()
 
@@ -540,6 +572,7 @@ export async function startDebugWorld(
     uninstallDebugSurface()
     controls.dispose()
     disposeMeshGeometries(worldGroup)
+    disposeHdrEnvironment()
     voxelChunkMaterial?.dispose()
     void renderer.dispose()
     root.innerHTML = ''
