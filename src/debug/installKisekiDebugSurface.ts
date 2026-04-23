@@ -12,9 +12,11 @@ type KisekiDebugPosition = {
 export type KisekiDebugStats = {
   drawCalls: number
   faceCount: number
+  fps: number
   loadedChunkCount: number
   playerChunk: ChunkCoordinates
   position: KisekiDebugPosition
+  triangleCount: number
   visibleChunkCount: number
 }
 

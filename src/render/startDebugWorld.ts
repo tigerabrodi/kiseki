@@ -105,6 +105,10 @@ export async function startDebugWorld(
             <dd data-fixed-rate>60</dd>
           </div>
           <div class="stats-card">
+            <dt>FPS</dt>
+            <dd data-fps>0.0</dd>
+          </div>
+          <div class="stats-card">
             <dt>Chunks</dt>
             <dd data-chunk-count>0</dd>
           </div>
@@ -123,6 +127,10 @@ export async function startDebugWorld(
           <div class="stats-card">
             <dt>Quads</dt>
             <dd data-face-count>0</dd>
+          </div>
+          <div class="stats-card">
+            <dt>Triangles</dt>
+            <dd data-triangle-count>0</dd>
           </div>
           <div class="stats-card">
             <dt>Draw Calls</dt>
@@ -144,6 +152,7 @@ export async function startDebugWorld(
     '[data-pointer-state]'
   )
   const fixedRateValue = root.querySelector<HTMLElement>('[data-fixed-rate]')
+  const fpsValue = root.querySelector<HTMLElement>('[data-fps]')
   const chunkCountValue = root.querySelector<HTMLElement>('[data-chunk-count]')
   const playerChunkValue = root.querySelector<HTMLElement>(
     '[data-player-chunk]'
@@ -153,6 +162,9 @@ export async function startDebugWorld(
   )
   const positionValue = root.querySelector<HTMLElement>('[data-position]')
   const faceCountValue = root.querySelector<HTMLElement>('[data-face-count]')
+  const triangleCountValue = root.querySelector<HTMLElement>(
+    '[data-triangle-count]'
+  )
   const drawCallsValue = root.querySelector<HTMLElement>('[data-draw-calls]')
   const lockButton = root.querySelector<HTMLButtonElement>('[data-lock-button]')
 
@@ -161,11 +173,13 @@ export async function startDebugWorld(
     statusValue === null ||
     pointerStateValue === null ||
     fixedRateValue === null ||
+    fpsValue === null ||
     chunkCountValue === null ||
     playerChunkValue === null ||
     visibleChunksValue === null ||
     positionValue === null ||
     faceCountValue === null ||
+    triangleCountValue === null ||
     drawCallsValue === null ||
     lockButton === null
   ) {
@@ -213,6 +227,8 @@ export async function startDebugWorld(
   let chunkMeshes: Array<DisposableMesh> = []
   let drawCalls = 0
   let totalFaceCount = 0
+  let totalTriangleCount = 0
+  let smoothedFps = 60
 
   const rebuildWorldMeshes = (): void => {
     scene.remove(worldGroup)
@@ -222,6 +238,7 @@ export async function startDebugWorld(
     const nextChunkMeshes: Array<DisposableMesh> = []
     let nextDrawCalls = 0
     let nextFaceCount = 0
+    let nextTriangleCount = 0
 
     for (const entry of chunkStreamer.world.entries()) {
       const chunkMesh = createChunkMesh(
@@ -241,6 +258,7 @@ export async function startDebugWorld(
       nextChunkMeshes.push(chunkMesh.mesh)
       nextDrawCalls += chunkMesh.drawCalls
       nextFaceCount += chunkMesh.faceCount
+      nextTriangleCount += chunkMesh.triangleCount
     }
 
     worldGroup = nextWorldGroup
@@ -249,6 +267,7 @@ export async function startDebugWorld(
     worldGroup.updateMatrixWorld(true)
     drawCalls = nextDrawCalls
     totalFaceCount = nextFaceCount
+    totalTriangleCount = nextTriangleCount
   }
 
   const syncStreamedWorld = (position: THREE.Vector3): void => {
@@ -287,6 +306,7 @@ export async function startDebugWorld(
     return {
       drawCalls,
       faceCount: totalFaceCount,
+      fps: smoothedFps,
       loadedChunkCount: chunkStreamer.world.size(),
       playerChunk,
       position: {
@@ -294,6 +314,7 @@ export async function startDebugWorld(
         y: currentCameraPosition.y,
         z: currentCameraPosition.z,
       },
+      triangleCount: totalTriangleCount,
       visibleChunkCount: countVisibleChunkMeshes(camera, chunkMeshes),
     }
   }
@@ -301,6 +322,7 @@ export async function startDebugWorld(
   const applyStatsToHud = (): void => {
     const stats = buildStatsSnapshot()
 
+    fpsValue.textContent = stats.fps.toFixed(1)
     chunkCountValue.textContent = stats.loadedChunkCount.toString()
     playerChunkValue.textContent = chunkKey(stats.playerChunk)
     visibleChunksValue.textContent = stats.visibleChunkCount.toString()
@@ -308,6 +330,7 @@ export async function startDebugWorld(
       1
     )}, ${stats.position.y.toFixed(1)}, ${stats.position.z.toFixed(1)}`
     faceCountValue.textContent = stats.faceCount.toString()
+    triangleCountValue.textContent = stats.triangleCount.toString()
     drawCallsValue.textContent = stats.drawCalls.toString()
   }
 
@@ -437,6 +460,11 @@ export async function startDebugWorld(
   void renderer.setAnimationLoop((timestampMilliseconds?: number) => {
     const timestampSeconds = (timestampMilliseconds ?? 0) / 1000
     const frame = fixedLoop.advance(timestampSeconds)
+
+    if (frame.frameTimeSeconds > 0) {
+      const instantaneousFps = 1 / frame.frameTimeSeconds
+      smoothedFps = THREE.MathUtils.lerp(smoothedFps, instantaneousFps, 0.15)
+    }
 
     for (let step = 0; step < frame.steps; step += 1) {
       camera.position.copy(currentCameraPosition)
