@@ -86,10 +86,10 @@ export async function startDebugWorld(
   root.innerHTML = `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Step 12</p>
-        <h1 class="title">Frustum Culling</h1>
+        <p class="eyebrow">Kiseki / Step 13</p>
+        <h1 class="title">Binary Greedy Meshing</h1>
         <p class="subtitle">
-          Chunk bounds now feed frustum culling, so off-screen terrain can stay loaded for streaming without being rendered every frame.
+          Visible coplanar faces now merge into larger rectangles, cutting the chunk mesh down before it ever reaches the GPU.
         </p>
         <dl class="stats">
           <div class="stats-card">
@@ -121,7 +121,7 @@ export async function startDebugWorld(
             <dd data-position>0, 0, 0</dd>
           </div>
           <div class="stats-card">
-            <dt>Faces</dt>
+            <dt>Quads</dt>
             <dd data-face-count>0</dd>
           </div>
           <div class="stats-card">
@@ -134,7 +134,7 @@ export async function startDebugWorld(
         </button>
       </div>
       <div class="viewport" data-viewport></div>
-      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. Turn away from the terrain and the visible-chunk count should drop below the loaded chunk count.</p>
+      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. Same-material surfaces now merge; alternating materials still stay split.</p>
     </main>
   `
 

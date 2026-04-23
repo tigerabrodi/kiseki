@@ -19,6 +19,7 @@ describe('buildChunkGeometryData', () => {
 
     expect(data.solidCount).toBe(0)
     expect(data.faceCount).toBe(0)
+    expect(data.visibleFaceCount).toBe(0)
     expect(data.vertexCount).toBe(0)
     expect(data.indexCount).toBe(0)
     expect(data.positions).toHaveLength(0)
@@ -35,6 +36,7 @@ describe('buildChunkGeometryData', () => {
 
     expect(data.solidCount).toBe(1)
     expect(data.faceCount).toBe(6)
+    expect(data.visibleFaceCount).toBe(6)
     expect(data.vertexCount).toBe(24)
     expect(data.indexCount).toBe(36)
     expect(data.triangleCount).toBe(12)
@@ -44,7 +46,22 @@ describe('buildChunkGeometryData', () => {
     expect(data.indices).toHaveLength(36)
   })
 
-  it('culls the shared face between two adjacent solid voxels', () => {
+  it('merges two adjacent same-material voxels down to six quads', () => {
+    const chunk = new Chunk()
+    chunk.set(0, 0, 0, 1)
+    chunk.set(1, 0, 0, 1)
+
+    const data = buildChunkGeometryData(chunk)
+
+    expect(data.solidCount).toBe(2)
+    expect(data.visibleFaceCount).toBe(10)
+    expect(data.faceCount).toBe(6)
+    expect(data.vertexCount).toBe(24)
+    expect(data.indexCount).toBe(36)
+    expect(data.triangleCount).toBe(12)
+  })
+
+  it('does not merge adjacent voxels with different materials', () => {
     const chunk = new Chunk()
     chunk.set(0, 0, 0, 1)
     chunk.set(1, 0, 0, 2)
@@ -52,13 +69,14 @@ describe('buildChunkGeometryData', () => {
     const data = buildChunkGeometryData(chunk)
 
     expect(data.solidCount).toBe(2)
+    expect(data.visibleFaceCount).toBe(10)
     expect(data.faceCount).toBe(10)
     expect(data.vertexCount).toBe(40)
     expect(data.indexCount).toBe(60)
     expect(data.triangleCount).toBe(20)
   })
 
-  it('culls shared boundary faces when a solid neighbor chunk is present', () => {
+  it('still culls shared boundary faces when a solid neighbor chunk is present', () => {
     const chunk = new Chunk()
     const pxNeighbor = new Chunk()
 
@@ -70,10 +88,9 @@ describe('buildChunkGeometryData', () => {
       px: pxNeighbor,
     })
 
-    expect(isolatedData.faceCount).toBe(6 * CHUNK_SIZE * CHUNK_SIZE)
-    expect(neighborAwareData.faceCount).toBe(5 * CHUNK_SIZE * CHUNK_SIZE)
-    expect(isolatedData.faceCount - neighborAwareData.faceCount).toBe(
-      CHUNK_SIZE * CHUNK_SIZE
-    )
+    expect(isolatedData.visibleFaceCount).toBe(6 * CHUNK_SIZE * CHUNK_SIZE)
+    expect(neighborAwareData.visibleFaceCount).toBe(5 * CHUNK_SIZE * CHUNK_SIZE)
+    expect(isolatedData.faceCount).toBe(6)
+    expect(neighborAwareData.faceCount).toBe(5)
   })
 })
