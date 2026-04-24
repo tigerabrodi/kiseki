@@ -2,10 +2,10 @@ export function createDebugWorldMarkup(): string {
   return `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Step 21</p>
-        <h1 class="title">GPU Terrain Generation</h1>
+        <p class="eyebrow">Kiseki / Step 24</p>
+        <h1 class="title">Profile Checkpoint 3</h1>
         <p class="subtitle">
-          Loaded chunks now start as empty GPU voxel buffers, then a WebGPU compute pass fills their material IDs directly on the device before the greedy mesher runs.
+          The terrain, meshing, and render path are now GPU-driven end to end. Use the crosshair to break or place blocks, then profile the streamed world in motion.
         </p>
         <dl class="stats">
           <div class="stats-card">
@@ -37,6 +37,10 @@ export function createDebugWorldMarkup(): string {
             <dd data-mesh-time>0.00</dd>
           </div>
           <div class="stats-card">
+            <dt>Terrain ms</dt>
+            <dd data-terrain-time>0.00</dd>
+          </div>
+          <div class="stats-card">
             <dt>Voxel Buffers</dt>
             <dd data-gpu-voxel-count>0</dd>
           </div>
@@ -59,6 +63,10 @@ export function createDebugWorldMarkup(): string {
           <div class="stats-card">
             <dt>Profile</dt>
             <dd data-profile-state>Idle</dd>
+          </div>
+          <div class="stats-card">
+            <dt>Pipeline</dt>
+            <dd data-pipeline-state>Mixed</dd>
           </div>
           <div class="stats-card">
             <dt>Chunks</dt>
@@ -88,6 +96,10 @@ export function createDebugWorldMarkup(): string {
             <dt>Draw Calls</dt>
             <dd data-draw-calls>0</dd>
           </div>
+          <div class="stats-card">
+            <dt>Edited Voxels</dt>
+            <dd data-edited-voxels>0</dd>
+          </div>
         </dl>
         <button class="lock-button" type="button" data-lock-button>
           Click To Fly
@@ -106,11 +118,12 @@ export function createDebugWorldMarkup(): string {
           </button>
         </div>
         <pre class="profile-report" data-profile-report>
-Press Start Profile Run, fly around for a bit, then stop to capture a fresh checkpoint-2 report.
+Press Start Profile Run, fly around for a bit, then stop to capture a fresh checkpoint-3 report.
         </pre>
       </div>
       <div class="viewport" data-viewport></div>
-      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. Chunk voxels now get generated on the GPU, while the CPU terrain generator sticks around only as a debug reference for parity checks and spawn-height queries.</p>
+      <div class="crosshair" aria-hidden="true"></div>
+      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. Left click breaks, right click places cobblestone. The CPU keeps only empty chunk placeholders plus sparse edit overrides while live voxels and meshes stay on the GPU.</p>
     </main>
   `
 }

@@ -35,6 +35,9 @@ export type ProfileReport = {
   meshGenerationChunkCount: ProfileMetricSummary
   meshGenerationPerChunkMs: ProfileMetricSummary
   meshGenerationTimeMs: ProfileMeshGenerationSummary
+  terrainGenerationChunkCount: ProfileMetricSummary
+  terrainGenerationPerChunkMs: ProfileMetricSummary
+  terrainGenerationTimeMs: ProfileMeshGenerationSummary
   triangleCount: ProfileMetricSummary
 }
 
@@ -89,7 +92,7 @@ class MetricAccumulator {
 
 export function formatProfileReport(report: ProfileReport): string {
   const lines = [
-    'Kiseki Profile Checkpoint 2',
+    'Kiseki Profile Checkpoint 3',
     `Duration: ${report.durationSeconds.toFixed(1)} s`,
     `Frames: ${report.frameCount}`,
     `FPS avg/min/max: ${formatMetric(report.fps)}`,
@@ -100,6 +103,10 @@ export function formatProfileReport(report: ProfileReport): string {
     `GPU ms avg/min/max: ${
       report.gpuTimeMs === null ? 'Unavailable' : formatMetric(report.gpuTimeMs)
     }`,
+    `Terrain dispatches: ${report.terrainGenerationTimeMs.samples}`,
+    `Terrain chunks avg/min/max: ${formatMetric(report.terrainGenerationChunkCount, 1)}`,
+    `Terrain ms avg/max/total: ${report.terrainGenerationTimeMs.average.toFixed(2)} / ${report.terrainGenerationTimeMs.max.toFixed(2)} / ${report.terrainGenerationTimeMs.total.toFixed(2)}`,
+    `Terrain ms/chunk avg/min/max: ${formatMetric(report.terrainGenerationPerChunkMs)}`,
     `Mesh rebuilds: ${report.meshGenerationTimeMs.samples}`,
     `Mesh chunks avg/min/max: ${formatMetric(report.meshGenerationChunkCount, 1)}`,
     `Mesh ms avg/max/total: ${report.meshGenerationTimeMs.average.toFixed(2)} / ${report.meshGenerationTimeMs.max.toFixed(2)} / ${report.meshGenerationTimeMs.total.toFixed(2)}`,
@@ -160,6 +167,9 @@ export class ProfileRecorder {
   private readonly meshGenerationChunkCount = new MetricAccumulator()
   private readonly meshGenerationPerChunkMs = new MetricAccumulator()
   private readonly meshGenerationTimeMs = new MetricAccumulator()
+  private readonly terrainGenerationChunkCount = new MetricAccumulator()
+  private readonly terrainGenerationPerChunkMs = new MetricAccumulator()
+  private readonly terrainGenerationTimeMs = new MetricAccumulator()
   private readonly triangleCount = new MetricAccumulator()
 
   private isRecordingSession = false
@@ -221,6 +231,19 @@ export class ProfileRecorder {
     }
   }
 
+  recordTerrainGeneration(durationMs: number, chunkCount: number): void {
+    if (!this.isRecordingSession) {
+      return
+    }
+
+    this.terrainGenerationTimeMs.add(durationMs)
+
+    if (chunkCount > 0) {
+      this.terrainGenerationChunkCount.add(chunkCount)
+      this.terrainGenerationPerChunkMs.add(durationMs / chunkCount)
+    }
+  }
+
   start(nowMs: number): void {
     this.resetSession()
     this.isRecordingSession = true
@@ -257,6 +280,12 @@ export class ProfileRecorder {
         ...this.meshGenerationTimeMs.summary(),
         total: this.meshGenerationTimeMs.totalValue(),
       },
+      terrainGenerationChunkCount: this.terrainGenerationChunkCount.summary(),
+      terrainGenerationPerChunkMs: this.terrainGenerationPerChunkMs.summary(),
+      terrainGenerationTimeMs: {
+        ...this.terrainGenerationTimeMs.summary(),
+        total: this.terrainGenerationTimeMs.totalValue(),
+      },
       triangleCount: this.triangleCount.summary(),
     }
 
@@ -275,6 +304,9 @@ export class ProfileRecorder {
     this.meshGenerationChunkCount.reset()
     this.meshGenerationPerChunkMs.reset()
     this.meshGenerationTimeMs.reset()
+    this.terrainGenerationChunkCount.reset()
+    this.terrainGenerationPerChunkMs.reset()
+    this.terrainGenerationTimeMs.reset()
     this.triangleCount.reset()
   }
 }

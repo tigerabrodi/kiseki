@@ -4,10 +4,8 @@ import WebGPU from 'three/addons/capabilities/WebGPU.js'
 
 import { getFlyMovementIntent } from '../camera/getFlyMovementIntent.ts'
 import { FixedStepLoop } from '../core/FixedStepLoop.ts'
-import {
-  installKisekiDebugSurface,
-  type KisekiDebugStats,
-} from '../debug/installKisekiDebugSurface.ts'
+import { buildGpuPipelineInfo } from '../debug/buildGpuPipelineInfo.ts'
+import type { KisekiDebugStats } from '../debug/installKisekiDebugSurface.ts'
 import { GpuChunkMeshCache } from '../gpu/GpuChunkMeshCache.ts'
 import { createGpuChunkMeshCache } from '../gpu/createGpuChunkMeshCache.ts'
 import { createRendererBackedGpuChunkMeshHandle } from '../gpu/createRendererBackedGpuChunkMeshHandle.ts'
@@ -16,23 +14,20 @@ import { GpuChunkVoxelCache } from '../gpu/GpuChunkVoxelCache.ts'
 import {
   createEmptyGpuVoxelBuffer,
   destroyGpuVoxelBuffer,
-  getGpuVoxelBufferInfo,
   getWebGpuDevice,
-  readGpuVoxelChunkMaterials,
 } from '../gpu/GpuVoxelBuffer.ts'
 import {
   GpuChunkMesher,
-  getGpuChunkMeshInfo,
-  readGpuChunkMesh,
   readGpuChunkMeshCounts,
 } from '../gpu/GpuChunkMesher.ts'
-import { buildChunkGeometryData } from '../mesh/buildChunkGeometryData.ts'
-import { compareChunkMeshes } from '../mesh/compareChunkMeshes.ts'
+import {
+  applyVoxelEdit,
+  type VoxelEditMode,
+} from '../interaction/applyVoxelEdit.ts'
 import {
   ProfileRecorder,
   formatProfileReport,
 } from '../profiling/ProfileRecorder.ts'
-import { compareVoxelMaterials } from '../voxel/compareVoxelMaterials.ts'
 import { Chunk } from '../voxel/chunk.ts'
 import { createDebugWorldMarkup } from './createDebugWorldMarkup.ts'
 import { createGpuChunkRenderMesh } from './createGpuChunkRenderMesh.ts'
@@ -42,10 +37,10 @@ import {
   createInputState,
   disposeMeshGeometries,
   getJsHeapBytes,
-  getSceneBackgroundType,
   turnCameraByDegrees,
 } from './debugWorldHelpers.ts'
 import { getDebugWorldElements } from './getDebugWorldElements.ts'
+import { installDebugWorldSurface } from './installDebugWorldSurface.ts'
 import { countVisibleChunkMeshes } from './countVisibleChunkMeshes.ts'
 import { loadHdrEnvironment } from './loadHdrEnvironment.ts'
 import { loadVoxelTextureAtlas } from './loadVoxelTextureAtlas.ts'
@@ -54,6 +49,7 @@ import {
   ChunkStreamer,
   worldPositionToChunkCoordinates,
 } from '../world/ChunkStreamer.ts'
+import { VoxelOverrideStore } from '../world/VoxelOverrideStore.ts'
 import { chunkKey, chunkOrigin } from '../world/World.ts'
 import { TerrainGenerator } from '../world/TerrainGenerator.ts'
 
@@ -72,6 +68,7 @@ export async function startDebugWorld(
     copyProfileButton,
     cpuTimeValue,
     drawCallsValue,
+    editedVoxelsValue,
     faceCountValue,
     fixedRateValue,
     fpsValue,
@@ -82,6 +79,7 @@ export async function startDebugWorld(
     gpuVoxelMegabytesValue,
     lockButton,
     meshTimeValue,
+    pipelineStateValue,
     playerChunkValue,
     pointerStateValue,
     positionValue,
@@ -89,6 +87,7 @@ export async function startDebugWorld(
     profileReportValue,
     profileStateValue,
     statusValue,
+    terrainTimeValue,
     triangleCountValue,
     vertexBytesValue,
     viewport,
@@ -147,6 +146,7 @@ export async function startDebugWorld(
   let lastCpuFrameTimeMs = 0
   let lastGpuFrameTimeMs: number | null = null
   let lastMeshGenerationTimeMs = 0
+  let lastTerrainGenerationTimeMs = 0
   let hdrEnvironmentName: string | null = null
   let voxelChunkMaterial: THREE.MeshStandardNodeMaterial | null = null
   let disposeHdrEnvironment = (): void => {}
@@ -158,7 +158,9 @@ export async function startDebugWorld(
   let gpuMeshStatsRefreshToken = 0
   let pendingGpuTimestampResolve: Promise<void> | null = null
   let renderFramesSinceGpuResolve = 0
+  let isVoxelEditInFlight = false
   const profileRecorder = new ProfileRecorder()
+  const voxelOverrideStore = new VoxelOverrideStore()
 
   const refreshGpuMeshStats = async (): Promise<void> => {
     if (gpuDevice === null || gpuChunkMeshCache === null) {
@@ -261,9 +263,33 @@ export async function startDebugWorld(
     void refreshGpuMeshStats()
   }
 
+  const createReferenceChunk = (coords: {
+    x: number
+    y: number
+    z: number
+  }): Chunk =>
+    voxelOverrideStore.applyToChunk(
+      coords,
+      terrainGenerator.createChunk(coords)
+    )
+
+  const buildPipelineInfo = () =>
+    buildGpuPipelineInfo({
+      chunkEntries: chunkStreamer.world.entries(),
+      gpuMeshBufferCount: gpuChunkMeshCache?.size() ?? 0,
+      gpuVoxelBufferCount: gpuVoxelCache?.size() ?? 0,
+      overrideChunkCount: voxelOverrideStore.chunkCount(),
+      overrideVoxelCount: voxelOverrideStore.voxelCount(),
+      usesGpuMeshGeneration: gpuChunkMesher !== null,
+      usesGpuMeshRendering: voxelChunkMaterial !== null,
+      usesGpuTerrainGeneration: gpuTerrainGenerator !== null,
+    })
+
   const syncGpuVoxelBuffers = (
     update: Pick<ChunkStreamUpdate, 'loaded' | 'unloaded'>
   ): void => {
+    const terrainGenerationStartMs = performance.now()
+
     gpuVoxelCache?.sync(update)
 
     if (gpuTerrainGenerator === null || gpuVoxelCache === null) {
@@ -276,6 +302,15 @@ export async function startDebugWorld(
       if (voxelHandle !== undefined) {
         gpuTerrainGenerator.generateChunk(voxelHandle, entry.coords)
       }
+    }
+
+    lastTerrainGenerationTimeMs = performance.now() - terrainGenerationStartMs
+
+    if (update.loaded.length > 0) {
+      profileRecorder.recordTerrainGeneration(
+        lastTerrainGenerationTimeMs,
+        update.loaded.length
+      )
     }
   }
 
@@ -312,25 +347,38 @@ export async function startDebugWorld(
 
   const buildStatsSnapshot = (): KisekiDebugStats => {
     const playerChunk = worldPositionToChunkCoordinates(currentCameraPosition)
+    const loadedChunkCount = chunkStreamer.world.size()
+    const gpuVoxelBufferCount = gpuVoxelCache?.size() ?? 0
+    const gpuMeshBufferCount = gpuChunkMeshCache?.size() ?? 0
+    const hasGpuFullPipeline =
+      loadedChunkCount > 0 &&
+      gpuVoxelBufferCount === loadedChunkCount &&
+      gpuMeshBufferCount === loadedChunkCount &&
+      gpuTerrainGenerator !== null &&
+      gpuChunkMesher !== null &&
+      voxelChunkMaterial !== null
 
     return {
       cpuTimeMs: lastCpuFrameTimeMs,
       drawCalls,
+      editedVoxelCount: voxelOverrideStore.voxelCount(),
       faceCount: totalFaceCount,
       fps: smoothedFps,
       gpuMeshBufferBytes: gpuChunkMeshCache?.totalBytes() ?? 0,
-      gpuMeshBufferCount: gpuChunkMeshCache?.size() ?? 0,
+      gpuMeshBufferCount,
       gpuVoxelBufferBytes: gpuVoxelCache?.totalBytes() ?? 0,
-      gpuVoxelBufferCount: gpuVoxelCache?.size() ?? 0,
+      gpuVoxelBufferCount,
       gpuTimeMs: lastGpuFrameTimeMs,
-      loadedChunkCount: chunkStreamer.world.size(),
+      loadedChunkCount,
       meshGenerationTimeMs: lastMeshGenerationTimeMs,
+      pipelineState: hasGpuFullPipeline ? 'GPU Full' : 'Mixed',
       playerChunk,
       position: {
         x: currentCameraPosition.x,
         y: currentCameraPosition.y,
         z: currentCameraPosition.z,
       },
+      terrainGenerationTimeMs: lastTerrainGenerationTimeMs,
       triangleCount: totalTriangleCount,
       vertexBytesPerVertex: 4,
       visibleChunkCount: countVisibleChunkMeshes(camera, chunkMeshes),
@@ -357,9 +405,9 @@ export async function startDebugWorld(
 
     if (profileState.isRecording) {
       profileReportValue.textContent = [
-        'Recording checkpoint 2...',
+        'Recording checkpoint 3...',
         `Elapsed: ${profileState.elapsedSeconds.toFixed(1)} s`,
-        'Fly around, stream some chunks, then stop to save the checkpoint.',
+        'Fly around, stream some chunks, try break/place, then stop to save the checkpoint.',
       ].join('\n')
       return
     }
@@ -372,7 +420,7 @@ export async function startDebugWorld(
     }
 
     profileReportValue.textContent =
-      'Press Start Profile Run, fly around for a bit, then stop to capture a fresh checkpoint-2 report.'
+      'Press Start Profile Run, fly around for a bit, try block edits, then stop to capture a fresh checkpoint-3 report.'
   }
 
   const applyStatsToHud = (): void => {
@@ -383,6 +431,7 @@ export async function startDebugWorld(
     gpuTimeValue.textContent =
       stats.gpuTimeMs === null ? 'n/a' : stats.gpuTimeMs.toFixed(2)
     meshTimeValue.textContent = stats.meshGenerationTimeMs.toFixed(2)
+    terrainTimeValue.textContent = stats.terrainGenerationTimeMs.toFixed(2)
     gpuVoxelCountValue.textContent = stats.gpuVoxelBufferCount.toString()
     gpuVoxelMegabytesValue.textContent = bytesToMegabytes(
       stats.gpuVoxelBufferBytes
@@ -392,6 +441,7 @@ export async function startDebugWorld(
       stats.gpuMeshBufferBytes
     ).toFixed(2)
     vertexBytesValue.textContent = stats.vertexBytesPerVertex.toString()
+    pipelineStateValue.textContent = stats.pipelineState
     chunkCountValue.textContent = stats.loadedChunkCount.toString()
     playerChunkValue.textContent = chunkKey(stats.playerChunk)
     visibleChunksValue.textContent = stats.visibleChunkCount.toString()
@@ -401,6 +451,7 @@ export async function startDebugWorld(
     faceCountValue.textContent = stats.faceCount.toString()
     triangleCountValue.textContent = stats.triangleCount.toString()
     drawCallsValue.textContent = stats.drawCalls.toString()
+    editedVoxelsValue.textContent = stats.editedVoxelCount.toString()
     applyProfileHud()
   }
 
@@ -523,6 +574,69 @@ export async function startDebugWorld(
 
     await navigator.clipboard.writeText(formatProfileReport(report))
   }
+  const handleVoxelEdit = async (
+    mode: VoxelEditMode,
+    requirePointerLock = true
+  ): Promise<{
+    didEdit: boolean
+    message: string
+    touchedChunkCount: number
+  }> => {
+    if (
+      (requirePointerLock && !controls.isLocked) ||
+      gpuDevice === null ||
+      gpuChunkMesher === null ||
+      gpuChunkMeshCache === null ||
+      gpuVoxelCache === null ||
+      isVoxelEditInFlight
+    ) {
+      return {
+        didEdit: false,
+        message: 'Pointer is unlocked or GPU world is not ready',
+        touchedChunkCount: 0,
+      }
+    }
+
+    isVoxelEditInFlight = true
+
+    try {
+      const result = await applyVoxelEdit({
+        camera,
+        chunkStreamer,
+        device: gpuDevice,
+        gpuChunkMeshCache,
+        gpuChunkMesher,
+        gpuVoxelCache,
+        mode,
+        overrideStore: voxelOverrideStore,
+      })
+
+      statusValue.textContent = result.message
+
+      if (result.didEdit) {
+        void refreshGpuMeshStats()
+      }
+
+      return result
+    } finally {
+      isVoxelEditInFlight = false
+      applyStatsToHud()
+    }
+  }
+  const handleViewportMouseDown = (event: MouseEvent): void => {
+    if (event.button === 0) {
+      event.preventDefault()
+      void handleVoxelEdit('break')
+    }
+
+    if (event.button === 2) {
+      event.preventDefault()
+      void handleVoxelEdit('place')
+    }
+  }
+  const handleViewportContextMenu = (event: MouseEvent): void => {
+    event.preventDefault()
+  }
 
   document.addEventListener('keydown', handleKeyDown)
   document.addEventListener('keyup', handleKeyUp)
@@ -531,126 +645,32 @@ export async function startDebugWorld(
   lockButton.addEventListener('click', handleLockButtonClick)
   profileButton.addEventListener('click', handleProfileButtonPress)
   copyProfileButton.addEventListener('click', handleCopyProfileButtonPress)
+  renderer.domElement.addEventListener('mousedown', handleViewportMouseDown)
+  renderer.domElement.addEventListener('contextmenu', handleViewportContextMenu)
   updatePointerState()
 
   fixedRateValue.textContent = '60'
   applyStatsToHud()
   const fixedLoop = new FixedStepLoop({ fixedDeltaSeconds: 1 / 60 })
 
-  const uninstallDebugSurface = installKisekiDebugSurface({
+  const uninstallDebugSurface = installDebugWorldSurface({
+    breakTargetBlock: async () => handleVoxelEdit('break', false),
+    buildPipelineInfo,
+    buildStatsSnapshot,
     camera,
+    chunkMeshes: () => chunkMeshes,
     chunkStreamer,
-    compareCpuAndGpuChunkMaterials: async (x: number, y: number, z: number) => {
-      if (gpuDevice === null) {
-        return null
-      }
-
-      const coords = { x, y, z }
-      const voxelHandle = gpuVoxelCache?.getBuffer(coords)
-
-      if (voxelHandle === undefined) {
-        return null
-      }
-
-      const cpuChunk = terrainGenerator.createChunk(coords)
-      const gpuMaterials = await readGpuVoxelChunkMaterials(
-        gpuDevice,
-        voxelHandle
-      )
-
-      return compareVoxelMaterials(cpuChunk.voxels, gpuMaterials)
-    },
-    compareCpuAndGpuChunkMesh: async (x: number, y: number, z: number) => {
-      if (gpuDevice === null) {
-        return null
-      }
-
-      const coords = { x, y, z }
-      const meshHandle = gpuChunkMeshCache?.getMesh(coords)
-
-      if (meshHandle === undefined) {
-        return null
-      }
-
-      const chunk = terrainGenerator.createChunk(coords)
-      const nxCoords = { x: coords.x - 1, y: coords.y, z: coords.z }
-      const nyCoords = { x: coords.x, y: coords.y - 1, z: coords.z }
-      const nzCoords = { x: coords.x, y: coords.y, z: coords.z - 1 }
-      const pxCoords = { x: coords.x + 1, y: coords.y, z: coords.z }
-      const pyCoords = { x: coords.x, y: coords.y + 1, z: coords.z }
-      const pzCoords = { x: coords.x, y: coords.y, z: coords.z + 1 }
-      const cpuMesh = buildChunkGeometryData(chunk, {
-        nx: chunkStreamer.world.hasChunk(nxCoords)
-          ? terrainGenerator.createChunk(nxCoords)
-          : undefined,
-        ny: chunkStreamer.world.hasChunk(nyCoords)
-          ? terrainGenerator.createChunk(nyCoords)
-          : undefined,
-        nz: chunkStreamer.world.hasChunk(nzCoords)
-          ? terrainGenerator.createChunk(nzCoords)
-          : undefined,
-        px: chunkStreamer.world.hasChunk(pxCoords)
-          ? terrainGenerator.createChunk(pxCoords)
-          : undefined,
-        py: chunkStreamer.world.hasChunk(pyCoords)
-          ? terrainGenerator.createChunk(pyCoords)
-          : undefined,
-        pz: chunkStreamer.world.hasChunk(pzCoords)
-          ? terrainGenerator.createChunk(pzCoords)
-          : undefined,
-      })
-      const gpuMesh = await readGpuChunkMesh(gpuDevice, meshHandle)
-
-      return compareChunkMeshes(cpuMesh, gpuMesh)
-    },
-    getGpuChunkInfo: (x: number, y: number, z: number) =>
-      getGpuVoxelBufferInfo({ x, y, z }, gpuVoxelCache?.getBuffer({ x, y, z })),
-    getGpuMeshInfo: (x: number, y: number, z: number) =>
-      getGpuChunkMeshInfo({ x, y, z }, gpuChunkMeshCache?.getMesh({ x, y, z })),
-    getGpuTerrainInfo: () => ({
-      lastErrorMessage: gpuTerrainGenerator?.getLastErrorMessage() ?? null,
-    }),
-    getMeshInfo: () => {
-      const firstMesh = chunkMeshes[0]
-
-      if (firstMesh === undefined) {
-        return null
-      }
-
-      return {
-        attributeNames: Object.keys(firstMesh.geometry.attributes),
-        hasIndirect: firstMesh.geometry.indirect !== null,
-        indexCount: firstMesh.geometry.index?.count ?? 0,
-        indexType: firstMesh.geometry.index?.constructor.name ?? null,
-        materialType: Array.isArray(firstMesh.material)
-          ? 'ArrayMaterial'
-          : firstMesh.material.type,
-        packedAttributeType:
-          firstMesh.geometry.attributes.packedData?.constructor.name ?? null,
-        vertexCount: firstMesh.geometry.attributes.packedData?.count ?? 0,
-      }
-    },
+    createReferenceChunk,
+    getGpuChunkMeshCache: () => gpuChunkMeshCache,
+    getGpuDevice: () => gpuDevice,
+    getGpuTerrainErrorMessage: () =>
+      gpuTerrainGenerator?.getLastErrorMessage() ?? null,
+    getGpuVoxelCache: () => gpuVoxelCache,
+    getHdrEnvironmentName: () => hdrEnvironmentName,
     getProfileReport: () => profileRecorder.getLastReport(),
     getProfileState: () => profileRecorder.getSessionState(performance.now()),
-    getSceneInfo: () => ({
-      backgroundType: getSceneBackgroundType(scene.background),
-      environmentName: hdrEnvironmentName,
-      hasEnvironment: scene.environment !== null,
-    }),
-    getStats: buildStatsSnapshot,
-    readGpuChunkMaterials: async (x: number, y: number, z: number) => {
-      if (gpuDevice === null) {
-        return null
-      }
-
-      const handle = gpuVoxelCache?.getBuffer({ x, y, z })
-
-      if (handle === undefined) {
-        return null
-      }
-
-      return Array.from(await readGpuVoxelChunkMaterials(gpuDevice, handle))
-    },
+    getScene: () => scene,
+    placeTargetBlock: async () => handleVoxelEdit('place', false),
     setCameraPosition: (x: number, y: number, z: number): void => {
       currentCameraPosition.set(x, y, z)
       previousCameraPosition.copy(currentCameraPosition)
@@ -734,6 +754,14 @@ export async function startDebugWorld(
     lockButton.removeEventListener('click', handleLockButtonClick)
     profileButton.removeEventListener('click', handleProfileButtonPress)
     copyProfileButton.removeEventListener('click', handleCopyProfileButtonPress)
+    renderer.domElement.removeEventListener(
+      'mousedown',
+      handleViewportMouseDown
+    )
+    renderer.domElement.removeEventListener(
+      'contextmenu',
+      handleViewportContextMenu
+    )
     uninstallDebugSurface()
     controls.dispose()
     gpuChunkMeshCache?.dispose()
@@ -829,6 +857,14 @@ export async function startDebugWorld(
     lockButton.removeEventListener('click', handleLockButtonClick)
     profileButton.removeEventListener('click', handleProfileButtonPress)
     copyProfileButton.removeEventListener('click', handleCopyProfileButtonPress)
+    renderer.domElement.removeEventListener(
+      'mousedown',
+      handleViewportMouseDown
+    )
+    renderer.domElement.removeEventListener(
+      'contextmenu',
+      handleViewportContextMenu
+    )
     uninstallDebugSurface()
     controls.dispose()
     disposeMeshGeometries(worldGroup)

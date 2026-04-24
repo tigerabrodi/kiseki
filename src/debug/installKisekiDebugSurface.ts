@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu'
 
+import type { GpuPipelineInfo } from './buildGpuPipelineInfo.ts'
 import type { ChunkMeshComparison } from '../mesh/compareChunkMeshes.ts'
 import type {
   ProfileReport,
@@ -18,6 +19,7 @@ type KisekiDebugPosition = {
 export type KisekiDebugStats = {
   cpuTimeMs: number
   drawCalls: number
+  editedVoxelCount: number
   faceCount: number
   fps: number
   gpuMeshBufferBytes: number
@@ -27,8 +29,10 @@ export type KisekiDebugStats = {
   gpuTimeMs: number | null
   loadedChunkCount: number
   meshGenerationTimeMs: number
+  pipelineState: string
   playerChunk: ChunkCoordinates
   position: KisekiDebugPosition
+  terrainGenerationTimeMs: number
   triangleCount: number
   vertexBytesPerVertex: number
   visibleChunkCount: number
@@ -74,7 +78,16 @@ export type KisekiGpuMeshInfo = {
   vertexByteLength: number
 } | null
 
+export type KisekiGpuPipelineInfo = GpuPipelineInfo | null
+
+export type KisekiVoxelEditResult = {
+  didEdit: boolean
+  message: string
+  touchedChunkCount: number
+}
+
 export type KisekiDebugSurface = {
+  breakTargetBlock: () => Promise<KisekiVoxelEditResult>
   camera: THREE.PerspectiveCamera
   chunkStreamer: ChunkStreamer
   compareCpuAndGpuChunkMesh: (
@@ -89,12 +102,14 @@ export type KisekiDebugSurface = {
   ) => Promise<VoxelMaterialComparison | null>
   getGpuChunkInfo: (x: number, y: number, z: number) => KisekiGpuChunkInfo
   getGpuMeshInfo: (x: number, y: number, z: number) => KisekiGpuMeshInfo
+  getGpuPipelineInfo: () => KisekiGpuPipelineInfo
   getGpuTerrainInfo: () => KisekiGpuTerrainInfo
   getMeshInfo: () => KisekiMeshInfo
   getProfileReport: () => ProfileReport | null
   getProfileState: () => ProfileSessionState
   getSceneInfo: () => KisekiSceneInfo
   getStats: () => KisekiDebugStats
+  placeTargetBlock: () => Promise<KisekiVoxelEditResult>
   readGpuChunkMaterials: (
     x: number,
     y: number,

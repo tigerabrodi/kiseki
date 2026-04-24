@@ -17,6 +17,7 @@ describe('ProfileRecorder', () => {
       triangleCount: 20000,
     })
     recorder.recordGpuTime(1.5)
+    recorder.recordTerrainGeneration(6, 32)
     recorder.recordMeshGeneration(8, 32)
     recorder.recordFrame({
       chunkCount: 36,
@@ -84,6 +85,25 @@ describe('ProfileRecorder', () => {
         min: 0.25,
         samples: 1,
       },
+      terrainGenerationTimeMs: {
+        average: 6,
+        max: 6,
+        min: 6,
+        samples: 1,
+        total: 6,
+      },
+      terrainGenerationChunkCount: {
+        average: 32,
+        max: 32,
+        min: 32,
+        samples: 1,
+      },
+      terrainGenerationPerChunkMs: {
+        average: 0.1875,
+        max: 0.1875,
+        min: 0.1875,
+        samples: 1,
+      },
       memory: {
         gpuBytes: {
           average: 5120,
@@ -122,6 +142,9 @@ describe('ProfileRecorder', () => {
     expect(report?.meshGenerationChunkCount.average).toBe(0)
     expect(report?.meshGenerationPerChunkMs.average).toBe(0)
     expect(report?.meshGenerationTimeMs.total).toBe(0)
+    expect(report?.terrainGenerationChunkCount.average).toBe(0)
+    expect(report?.terrainGenerationPerChunkMs.average).toBe(0)
+    expect(report?.terrainGenerationTimeMs.total).toBe(0)
   })
 
   it('formats a readable checkpoint report', () => {
@@ -143,10 +166,13 @@ describe('ProfileRecorder', () => {
 
     expect(report).not.toBeNull()
     expect(formatProfileReport(report!)).toContain(
-      'Kiseki Profile Checkpoint 2'
+      'Kiseki Profile Checkpoint 3'
     )
     expect(formatProfileReport(report!)).toContain('FPS avg/min/max')
     expect(formatProfileReport(report!)).toContain('CPU @60Hz budget avg/max')
+    expect(formatProfileReport(report!)).toContain(
+      'Terrain ms/chunk avg/min/max'
+    )
     expect(formatProfileReport(report!)).toContain('Mesh ms/chunk avg/min/max')
     expect(formatProfileReport(report!)).toContain('GPU memory avg/max')
   })

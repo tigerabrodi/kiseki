@@ -5,6 +5,8 @@ import {
   type ChunkCoordinates,
   type WorldChunkEntry,
 } from '../world/World.ts'
+import type { LocalVoxelCoordinates } from '../world/worldVoxelCoordinates.ts'
+import { getLocalVoxelIndex } from '../world/worldVoxelCoordinates.ts'
 import {
   decodeGpuVoxelData,
   encodeChunkVoxelsForGpu,
@@ -150,6 +152,25 @@ export function uploadChunkToGpuVoxelBuffer(
   }
 
   device.queue.writeBuffer(handle.buffer, 0, data)
+}
+
+export function writeGpuVoxelMaterial(
+  device: GPUDevice,
+  handle: GpuVoxelBufferHandle,
+  localCoords: LocalVoxelCoordinates,
+  materialId: number
+): void {
+  if (!Number.isInteger(materialId) || materialId < 0 || materialId > 0xff) {
+    throw new RangeError(
+      `materialId must be an integer between 0 and 255, got ${materialId}`
+    )
+  }
+
+  device.queue.writeBuffer(
+    handle.buffer,
+    getLocalVoxelIndex(localCoords) * Uint32Array.BYTES_PER_ELEMENT,
+    new Uint32Array([materialId])
+  )
 }
 
 export function getGpuVoxelBufferInfo(

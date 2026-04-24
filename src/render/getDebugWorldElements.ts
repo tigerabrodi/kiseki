@@ -3,6 +3,7 @@ export type DebugWorldElements = {
   copyProfileButton: HTMLButtonElement
   cpuTimeValue: HTMLElement
   drawCallsValue: HTMLElement
+  editedVoxelsValue: HTMLElement
   faceCountValue: HTMLElement
   fixedRateValue: HTMLElement
   fpsValue: HTMLElement
@@ -13,6 +14,7 @@ export type DebugWorldElements = {
   gpuVoxelMegabytesValue: HTMLElement
   lockButton: HTMLButtonElement
   meshTimeValue: HTMLElement
+  pipelineStateValue: HTMLElement
   playerChunkValue: HTMLElement
   pointerStateValue: HTMLElement
   positionValue: HTMLElement
@@ -20,6 +22,7 @@ export type DebugWorldElements = {
   profileReportValue: HTMLElement
   profileStateValue: HTMLElement
   statusValue: HTMLElement
+  terrainTimeValue: HTMLElement
   triangleCountValue: HTMLElement
   vertexBytesValue: HTMLElement
   viewport: HTMLElement
@@ -37,6 +40,9 @@ export function getDebugWorldElements(root: HTMLElement): DebugWorldElements {
   const cpuTimeValue = root.querySelector<HTMLElement>('[data-cpu-time]')
   const gpuTimeValue = root.querySelector<HTMLElement>('[data-gpu-time]')
   const meshTimeValue = root.querySelector<HTMLElement>('[data-mesh-time]')
+  const terrainTimeValue = root.querySelector<HTMLElement>(
+    '[data-terrain-time]'
+  )
   const gpuVoxelCountValue = root.querySelector<HTMLElement>(
     '[data-gpu-voxel-count]'
   )
@@ -54,6 +60,9 @@ export function getDebugWorldElements(root: HTMLElement): DebugWorldElements {
   const profileStateValue = root.querySelector<HTMLElement>(
     '[data-profile-state]'
   )
+  const pipelineStateValue = root.querySelector<HTMLElement>(
+    '[data-pipeline-state]'
+  )
   const chunkCountValue = root.querySelector<HTMLElement>('[data-chunk-count]')
   const playerChunkValue = root.querySelector<HTMLElement>(
     '[data-player-chunk]'
@@ -67,6 +76,9 @@ export function getDebugWorldElements(root: HTMLElement): DebugWorldElements {
     '[data-triangle-count]'
   )
   const drawCallsValue = root.querySelector<HTMLElement>('[data-draw-calls]')
+  const editedVoxelsValue = root.querySelector<HTMLElement>(
+    '[data-edited-voxels]'
+  )
   const lockButton = root.querySelector<HTMLButtonElement>('[data-lock-button]')
   const profileButton = root.querySelector<HTMLButtonElement>(
     '[data-profile-button]'
@@ -87,12 +99,14 @@ export function getDebugWorldElements(root: HTMLElement): DebugWorldElements {
     cpuTimeValue === null ||
     gpuTimeValue === null ||
     meshTimeValue === null ||
+    terrainTimeValue === null ||
     gpuVoxelCountValue === null ||
     gpuVoxelMegabytesValue === null ||
     gpuMeshCountValue === null ||
     gpuMeshMegabytesValue === null ||
     vertexBytesValue === null ||
     profileStateValue === null ||
+    pipelineStateValue === null ||
     chunkCountValue === null ||
     playerChunkValue === null ||
     visibleChunksValue === null ||
@@ -100,6 +114,7 @@ export function getDebugWorldElements(root: HTMLElement): DebugWorldElements {
     faceCountValue === null ||
     triangleCountValue === null ||
     drawCallsValue === null ||
+    editedVoxelsValue === null ||
     lockButton === null ||
     profileButton === null ||
     copyProfileButton === null ||
@@ -113,6 +128,7 @@ export function getDebugWorldElements(root: HTMLElement): DebugWorldElements {
     copyProfileButton,
     cpuTimeValue,
     drawCallsValue,
+    editedVoxelsValue,
     faceCountValue,
     fixedRateValue,
     fpsValue,
@@ -123,6 +139,7 @@ export function getDebugWorldElements(root: HTMLElement): DebugWorldElements {
     gpuVoxelMegabytesValue,
     lockButton,
     meshTimeValue,
+    pipelineStateValue,
     playerChunkValue,
     pointerStateValue,
     positionValue,
@@ -130,6 +147,7 @@ export function getDebugWorldElements(root: HTMLElement): DebugWorldElements {
     profileReportValue,
     profileStateValue,
     statusValue,
+    terrainTimeValue,
     triangleCountValue,
     vertexBytesValue,
     viewport,
