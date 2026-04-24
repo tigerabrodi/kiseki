@@ -81,4 +81,23 @@ describe('ChunkStreamer', () => {
     expect(streamer.world.hasChunk({ x: -1, y: 0, z: 0 })).toBe(false)
     expect(streamer.world.hasChunk({ x: 3, y: 0, z: 0 })).toBe(true)
   })
+
+  it('supports wider horizontal streaming extents for fly mode', () => {
+    const streamer = new ChunkStreamer({
+      createChunk: () => new Chunk(),
+      loadRadius: { x: 2, y: 1, z: 2 },
+      unloadBuffer: { x: 1, y: 1, z: 1 },
+    })
+
+    const initialUpdate = streamer.update({ x: 0, y: 0, z: 0 })
+    const moveOneChunk = streamer.update({ x: 1, y: 0, z: 0 })
+    const moveTwoChunks = streamer.update({ x: 2, y: 0, z: 0 })
+
+    expect(initialUpdate.loaded).toHaveLength(75)
+    expect(moveOneChunk.loaded).toHaveLength(15)
+    expect(moveOneChunk.unloaded).toHaveLength(0)
+    expect(moveTwoChunks.loaded).toHaveLength(15)
+    expect(moveTwoChunks.unloaded).toHaveLength(15)
+    expect(streamer.world.entries()).toHaveLength(90)
+  })
 })

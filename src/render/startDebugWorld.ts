@@ -116,7 +116,7 @@ export async function startDebugWorld(
   scene.backgroundIntensity = 0.45
   scene.environmentIntensity = 0.9
 
-  const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 200)
+  const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 320)
   const movementSpeed = 8
 
   scene.add(new THREE.AmbientLight(0xf4efe4, 0.45))
@@ -132,8 +132,8 @@ export async function startDebugWorld(
   const terrainGenerator = new TerrainGenerator({ seed: 'kiseki' })
   const chunkStreamer = new ChunkStreamer({
     createChunk: () => new Chunk(),
-    loadRadius: 1,
-    unloadBuffer: 1,
+    loadRadius: { x: 2, y: 1, z: 2 },
+    unloadBuffer: { x: 1, y: 1, z: 1 },
   })
   let worldGroup = new THREE.Group()
   scene.add(worldGroup)
