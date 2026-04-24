@@ -41,6 +41,7 @@ export type KisekiDebugStats = {
 export type KisekiMeshInfo = {
   attributeNames: Array<string>
   hasIndirect: boolean
+  indirectOffset: number
   indexCount: number
   indexType: string | null
   materialType: string
@@ -59,23 +60,34 @@ export type KisekiGpuTerrainInfo = {
 } | null
 
 export type KisekiGpuChunkInfo = {
+  byteOffset: number
   byteLength: number
   coords: ChunkCoordinates
+  isSlabAllocated: boolean
   label: string
+  slotIndex: number
   voxelCount: number
 } | null
 
 export type KisekiGpuMeshInfo = {
+  baseVertex: number
+  countByteOffset: number
   coords: ChunkCoordinates
   countByteLength: number
+  firstIndex: number
   indirectByteLength: number
+  indirectByteOffset: number
   indexByteLength: number
+  indexByteOffset: number
+  isSlabAllocated: boolean
   label: string
   maxFaceCount: number
   maxIndexCount: number
   maxVertexCount: number
+  slotIndex: number
   totalByteLength: number
   vertexByteLength: number
+  vertexByteOffset: number
 } | null
 
 export type KisekiGpuPipelineInfo = GpuPipelineInfo | null

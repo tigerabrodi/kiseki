@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   getAffectedChunkCoordsForLocalVoxel,
+  getChunkCoordsWithCardinalNeighbors,
   getLocalVoxelIndex,
   localVoxelToWorldVoxel,
   worldVoxelToChunkVoxel,
@@ -46,6 +47,18 @@ describe('worldVoxelCoordinates', () => {
       { x: 4, y: -2, z: 7 },
       { x: 3, y: -2, z: 7 },
       { x: 4, y: -1, z: 7 },
+    ])
+  })
+
+  it('returns a chunk plus its six cardinal neighbors', () => {
+    expect(getChunkCoordsWithCardinalNeighbors({ x: 2, y: -1, z: 4 })).toEqual([
+      { x: 2, y: -1, z: 4 },
+      { x: 1, y: -1, z: 4 },
+      { x: 3, y: -1, z: 4 },
+      { x: 2, y: -2, z: 4 },
+      { x: 2, y: 0, z: 4 },
+      { x: 2, y: -1, z: 3 },
+      { x: 2, y: -1, z: 5 },
     ])
   })
 })

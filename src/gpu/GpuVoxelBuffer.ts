@@ -41,8 +41,11 @@ function createVoxelBuffer(
 
   return {
     buffer,
+    byteOffset: 0,
     byteLength: GPU_VOXEL_BUFFER_BYTE_LENGTH,
+    isSlabAllocated: false,
     label,
+    slotIndex: 0,
     voxelCount: initialData.length,
   }
 }
@@ -90,7 +93,8 @@ export async function readGpuBufferToUint32Array(
   device: GPUDevice,
   buffer: GPUBuffer,
   byteLength: number,
-  label = 'gpu_buffer'
+  label = 'gpu_buffer',
+  byteOffset = 0
 ): Promise<Uint32Array> {
   if (byteLength === 0) {
     return new Uint32Array()
@@ -108,7 +112,7 @@ export async function readGpuBufferToUint32Array(
     label: `${label}_readback_encoder`,
   })
 
-  encoder.copyBufferToBuffer(buffer, 0, readbackBuffer, 0, byteLength)
+  encoder.copyBufferToBuffer(buffer, byteOffset, readbackBuffer, 0, byteLength)
   device.queue.submit([encoder.finish()])
   await readbackBuffer.mapAsync(gpuMapMode.READ, 0, byteLength)
 
@@ -127,7 +131,8 @@ export async function readGpuVoxelBuffer(
     device,
     handle.buffer,
     handle.byteLength,
-    handle.label
+    handle.label,
+    handle.byteOffset
   )
 }
 
@@ -151,7 +156,7 @@ export function uploadChunkToGpuVoxelBuffer(
     )
   }
 
-  device.queue.writeBuffer(handle.buffer, 0, data)
+  device.queue.writeBuffer(handle.buffer, handle.byteOffset, data)
 }
 
 export function writeGpuVoxelMaterial(
@@ -168,7 +173,8 @@ export function writeGpuVoxelMaterial(
 
   device.queue.writeBuffer(
     handle.buffer,
-    getLocalVoxelIndex(localCoords) * Uint32Array.BYTES_PER_ELEMENT,
+    handle.byteOffset +
+      getLocalVoxelIndex(localCoords) * Uint32Array.BYTES_PER_ELEMENT,
     new Uint32Array([materialId])
   )
 }
@@ -177,9 +183,12 @@ export function getGpuVoxelBufferInfo(
   coords: ChunkCoordinates,
   handle: GpuVoxelBufferHandle | undefined
 ): {
+  byteOffset: number
   byteLength: number
   coords: ChunkCoordinates
+  isSlabAllocated: boolean
   label: string
+  slotIndex: number
   voxelCount: number
 } | null {
   if (handle === undefined) {
@@ -187,9 +196,12 @@ export function getGpuVoxelBufferInfo(
   }
 
   return {
+    byteOffset: handle.byteOffset,
     byteLength: handle.byteLength,
     coords: { ...coords },
+    isSlabAllocated: handle.isSlabAllocated,
     label: handle.label,
+    slotIndex: handle.slotIndex,
     voxelCount: handle.voxelCount,
   }
 }

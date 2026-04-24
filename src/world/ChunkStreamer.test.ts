@@ -100,4 +100,14 @@ describe('ChunkStreamer', () => {
     expect(moveTwoChunks.unloaded).toHaveLength(15)
     expect(streamer.world.entries()).toHaveLength(90)
   })
+
+  it('reports the max retained chunk count implied by load radius and hysteresis', () => {
+    const streamer = new ChunkStreamer({
+      createChunk: () => new Chunk(),
+      loadRadius: { x: 2, y: 1, z: 2 },
+      unloadBuffer: { x: 1, y: 1, z: 1 },
+    })
+
+    expect(streamer.getMaxRetainedChunkCount()).toBe(245)
+  })
 })

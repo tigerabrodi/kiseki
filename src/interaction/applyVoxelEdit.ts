@@ -1,12 +1,10 @@
 import * as THREE from 'three/webgpu'
 
 import type { GpuChunkMeshCache } from '../gpu/GpuChunkMeshCache.ts'
-import {
-  type GpuVoxelBufferNeighbors,
-  GpuChunkMesher,
-} from '../gpu/GpuChunkMesher.ts'
+import { GpuChunkMesher } from '../gpu/GpuChunkMesher.ts'
 import type { GpuChunkVoxelCache } from '../gpu/GpuChunkVoxelCache.ts'
 import { writeGpuVoxelMaterial } from '../gpu/GpuVoxelBuffer.ts'
+import { remeshGpuChunkAtCoords } from '../gpu/remeshGpuChunkAtCoords.ts'
 import type { ChunkStreamer } from '../world/ChunkStreamer.ts'
 import { chunkKey } from '../world/World.ts'
 import { VoxelOverrideStore } from '../world/VoxelOverrideStore.ts'
@@ -45,42 +43,6 @@ function formatWorldVoxel(hit: VoxelRaycastHit, mode: VoxelEditMode): string {
   const target = mode === 'break' ? hit.hitVoxel : hit.placementVoxel
 
   return `${target.x},${target.y},${target.z}`
-}
-
-function getNeighborVoxelBuffers(
-  gpuVoxelCache: GpuChunkVoxelCache,
-  coords: { x: number; y: number; z: number }
-): GpuVoxelBufferNeighbors {
-  return {
-    nx: gpuVoxelCache.getBuffer({ x: coords.x - 1, y: coords.y, z: coords.z }),
-    ny: gpuVoxelCache.getBuffer({ x: coords.x, y: coords.y - 1, z: coords.z }),
-    nz: gpuVoxelCache.getBuffer({ x: coords.x, y: coords.y, z: coords.z - 1 }),
-    px: gpuVoxelCache.getBuffer({ x: coords.x + 1, y: coords.y, z: coords.z }),
-    py: gpuVoxelCache.getBuffer({ x: coords.x, y: coords.y + 1, z: coords.z }),
-    pz: gpuVoxelCache.getBuffer({ x: coords.x, y: coords.y, z: coords.z + 1 }),
-  }
-}
-
-function remeshChunk(
-  gpuChunkMesher: GpuChunkMesher,
-  gpuChunkMeshCache: GpuChunkMeshCache,
-  gpuVoxelCache: GpuChunkVoxelCache,
-  coords: { x: number; y: number; z: number }
-): boolean {
-  const meshHandle = gpuChunkMeshCache.getMesh(coords)
-  const currentVoxelBuffer = gpuVoxelCache.getBuffer(coords)
-
-  if (meshHandle === undefined || currentVoxelBuffer === undefined) {
-    return false
-  }
-
-  gpuChunkMesher.meshChunk(
-    meshHandle,
-    currentVoxelBuffer,
-    getNeighborVoxelBuffers(gpuVoxelCache, coords)
-  )
-
-  return true
 }
 
 function getTargetMaterialId(
@@ -177,7 +139,7 @@ export async function applyVoxelEdit(
     }
 
     if (
-      remeshChunk(
+      remeshGpuChunkAtCoords(
         options.gpuChunkMesher,
         options.gpuChunkMeshCache,
         options.gpuVoxelCache,

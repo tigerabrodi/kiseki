@@ -167,4 +167,12 @@ export class ChunkStreamer {
   updateFromWorldPosition(position: WorldPosition): ChunkStreamUpdate {
     return this.update(worldPositionToChunkCoordinates(position))
   }
+
+  getMaxRetainedChunkCount(): number {
+    return (
+      (this.unloadExtents.x * 2 + 1) *
+      (this.unloadExtents.y * 2 + 1) *
+      (this.unloadExtents.z * 2 + 1)
+    )
+  }
 }

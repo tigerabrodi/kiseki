@@ -110,3 +110,41 @@ export function getAffectedChunkCoordsForLocalVoxel(
 
   return affected
 }
+
+export function getChunkCoordsWithCardinalNeighbors(
+  chunkCoords: ChunkCoordinates
+): Array<ChunkCoordinates> {
+  return [
+    { ...chunkCoords },
+    {
+      x: chunkCoords.x - 1,
+      y: chunkCoords.y,
+      z: chunkCoords.z,
+    },
+    {
+      x: chunkCoords.x + 1,
+      y: chunkCoords.y,
+      z: chunkCoords.z,
+    },
+    {
+      x: chunkCoords.x,
+      y: chunkCoords.y - 1,
+      z: chunkCoords.z,
+    },
+    {
+      x: chunkCoords.x,
+      y: chunkCoords.y + 1,
+      z: chunkCoords.z,
+    },
+    {
+      x: chunkCoords.x,
+      y: chunkCoords.y,
+      z: chunkCoords.z - 1,
+    },
+    {
+      x: chunkCoords.x,
+      y: chunkCoords.y,
+      z: chunkCoords.z + 1,
+    },
+  ]
+}

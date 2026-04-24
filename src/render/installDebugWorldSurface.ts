@@ -140,9 +140,14 @@ export function installDebugWorldSurface(
         return null
       }
 
+      const indirectOffset = Array.isArray(firstMesh.geometry.indirectOffset)
+        ? (firstMesh.geometry.indirectOffset[0] ?? 0)
+        : firstMesh.geometry.indirectOffset
+
       return {
         attributeNames: Object.keys(firstMesh.geometry.attributes),
         hasIndirect: firstMesh.geometry.indirect !== null,
+        indirectOffset,
         indexCount: firstMesh.geometry.index?.count ?? 0,
         indexType: firstMesh.geometry.index?.constructor.name ?? null,
         materialType: Array.isArray(firstMesh.material)

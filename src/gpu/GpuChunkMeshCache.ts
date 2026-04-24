@@ -3,6 +3,7 @@ import {
   type ChunkCoordinates,
   type WorldChunkEntry,
 } from '../world/World.ts'
+import type { ChunkStreamUpdate } from '../world/ChunkStreamer.ts'
 import {
   type GpuChunkMeshHandle,
   destroyGpuChunkMeshHandle,
@@ -49,11 +50,27 @@ export class GpuChunkMeshCache {
     this.meshes.clear()
   }
 
-  rebuild(entries: Array<WorldChunkEntry>): void {
-    this.dispose()
+  sync(update: Pick<ChunkStreamUpdate, 'loaded' | 'unloaded'>): void {
+    for (const entry of update.unloaded) {
+      const key = chunkKey(entry.coords)
+      const mesh = this.meshes.get(key)
 
-    for (const entry of entries) {
-      this.meshes.set(chunkKey(entry.coords), this.createMesh(entry))
+      if (mesh === undefined) {
+        continue
+      }
+
+      this.destroyMesh(mesh)
+      this.meshes.delete(key)
+    }
+
+    for (const entry of update.loaded) {
+      const key = chunkKey(entry.coords)
+
+      if (this.meshes.has(key)) {
+        continue
+      }
+
+      this.meshes.set(key, this.createMesh(entry))
     }
   }
 

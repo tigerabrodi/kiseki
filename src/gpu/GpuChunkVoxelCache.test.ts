@@ -28,8 +28,11 @@ describe('GpuChunkVoxelCache', () => {
       (entry: WorldChunkEntry): GpuVoxelBufferHandle =>
         ({
           buffer: {} as GPUBuffer,
+          byteOffset: 0,
           byteLength: 1024,
+          isSlabAllocated: false,
           label: `chunk_${entry.coords.x}_${entry.coords.y}_${entry.coords.z}`,
+          slotIndex: entry.coords.x,
           voxelCount: 256,
         }) satisfies GpuVoxelBufferHandle
     )
@@ -51,8 +54,11 @@ describe('GpuChunkVoxelCache', () => {
       (entry) =>
         ({
           buffer: {} as GPUBuffer,
+          byteOffset: 0,
           byteLength: 512,
+          isSlabAllocated: false,
           label: `chunk_${entry.coords.x}`,
+          slotIndex: entry.coords.x,
           voxelCount: 128,
         }) satisfies GpuVoxelBufferHandle,
       destroyBuffer
@@ -75,8 +81,11 @@ describe('GpuChunkVoxelCache', () => {
       (): GpuVoxelBufferHandle =>
         ({
           buffer: {} as GPUBuffer,
+          byteOffset: 0,
           byteLength: 256,
+          isSlabAllocated: false,
           label: 'chunk',
+          slotIndex: 0,
           voxelCount: 64,
         }) satisfies GpuVoxelBufferHandle
     )

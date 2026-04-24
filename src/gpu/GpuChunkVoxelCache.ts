@@ -7,8 +7,11 @@ import {
 
 export type GpuVoxelBufferHandle = {
   buffer: GPUBuffer
+  byteOffset: number
   byteLength: number
+  isSlabAllocated: boolean
   label: string
+  slotIndex: number
   voxelCount: number
 }
 

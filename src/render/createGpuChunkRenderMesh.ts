@@ -21,7 +21,10 @@ export function createGpuChunkRenderMesh(
 
   geometry.setAttribute('packedData', renderBuffers.packedDataAttribute)
   geometry.setIndex(renderBuffers.indexAttribute)
-  geometry.setIndirect(renderBuffers.indirectAttribute, 0)
+  geometry.setIndirect(
+    renderBuffers.indirectAttribute,
+    handle.indirectByteOffset
+  )
   geometry.boundingBox = new THREE.Box3(
     new THREE.Vector3(0, 0, 0),
     new THREE.Vector3(CHUNK_SIZE, CHUNK_SIZE, CHUNK_SIZE)

@@ -142,6 +142,8 @@ export class GpuTerrainGenerator {
           binding: 0,
           resource: {
             buffer: voxelHandle.buffer,
+            offset: voxelHandle.byteOffset,
+            size: voxelHandle.byteLength,
           },
         },
         {

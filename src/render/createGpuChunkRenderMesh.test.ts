@@ -24,12 +24,18 @@ function createRenderHandle(): GpuChunkMeshHandle {
   )
 
   return {
+    baseVertex: 8,
+    countsByteOffset: 0,
     countsBuffer: createFakeGpuBuffer(),
     countsByteLength: 16,
+    firstIndex: 24,
+    indexByteOffset: 96,
     indirectBuffer: createFakeGpuBuffer(),
     indirectByteLength: 20,
+    indirectByteOffset: 40,
     indexBuffer: createFakeGpuBuffer(),
     indexByteLength: 48,
+    isSlabAllocated: false,
     label: 'chunk_mesh_0_0_0',
     maxFaceCount: 6,
     maxIndexCount: 36,
@@ -39,6 +45,8 @@ function createRenderHandle(): GpuChunkMeshHandle {
       indexAttribute,
       packedDataAttribute,
     },
+    slotIndex: 1,
+    vertexByteOffset: 32,
     vertexBuffer: createFakeGpuBuffer(),
     vertexByteLength: 32,
   }
@@ -57,7 +65,7 @@ describe('createGpuChunkRenderMesh', () => {
     )
     expect(geometry.getIndex()).toBe(handle.renderBuffers?.indexAttribute)
     expect(geometry.getIndirect()).toBe(handle.renderBuffers?.indirectAttribute)
-    expect(geometry.indirectOffset).toBe(0)
+    expect(geometry.indirectOffset).toBe(handle.indirectByteOffset)
     expect(mesh.frustumCulled).toBe(true)
     expect(geometry.boundingBox?.min.toArray()).toEqual([0, 0, 0])
     expect(geometry.boundingBox?.max.toArray()).toEqual([
@@ -74,16 +82,24 @@ describe('createGpuChunkRenderMesh', () => {
     expect(() =>
       createGpuChunkRenderMesh(
         {
+          baseVertex: 0,
+          countsByteOffset: 0,
           countsBuffer: createFakeGpuBuffer(),
           countsByteLength: 16,
+          firstIndex: 0,
+          indexByteOffset: 0,
           indirectBuffer: createFakeGpuBuffer(),
           indirectByteLength: 20,
+          indirectByteOffset: 0,
           indexBuffer: createFakeGpuBuffer(),
           indexByteLength: 48,
+          isSlabAllocated: false,
           label: 'chunk_mesh_missing',
           maxFaceCount: 6,
           maxIndexCount: 36,
           maxVertexCount: 24,
+          slotIndex: 0,
+          vertexByteOffset: 0,
           vertexBuffer: createFakeGpuBuffer(),
           vertexByteLength: 32,
         },
