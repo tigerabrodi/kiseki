@@ -18,7 +18,13 @@ export function createGpuChunkRenderMesh(
   }
 
   const geometry = new THREE.BufferGeometry()
+  const dummyPositionAttribute = new THREE.BufferAttribute(
+    new Float32Array(3),
+    3
+  )
 
+  dummyPositionAttribute.name = 'chunk_mesh_dummy_position'
+  geometry.setAttribute('position', dummyPositionAttribute)
   geometry.setAttribute('packedData', renderBuffers.packedDataAttribute)
   geometry.setIndex(renderBuffers.indexAttribute)
   geometry.setIndirect(

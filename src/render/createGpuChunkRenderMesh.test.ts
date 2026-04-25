@@ -60,6 +60,9 @@ describe('createGpuChunkRenderMesh', () => {
     const { mesh } = createGpuChunkRenderMesh(handle, material)
     const geometry = mesh.geometry
 
+    expect(geometry.getAttribute('position')?.name).toBe(
+      'chunk_mesh_dummy_position'
+    )
     expect(geometry.getAttribute('packedData')).toBe(
       handle.renderBuffers?.packedDataAttribute
     )

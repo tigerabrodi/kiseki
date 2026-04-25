@@ -18,6 +18,7 @@ type SyncStreamedGpuChunkMeshesOptions = {
   chunkMeshCache: GpuChunkMeshCache
   chunkMesher: GpuChunkMesher
   chunkMeshMap: Map<string, DisposableMesh>
+  chunkMeshSlotMap: Map<number, DisposableMesh>
   gpuVoxelCache: GpuChunkVoxelCache
   material: THREE.MeshStandardNodeMaterial
   update: Pick<ChunkStreamUpdate, 'loaded' | 'unloaded'>
@@ -66,7 +67,6 @@ function removeChunkRenderMesh(
   }
 
   worldGroup.remove(mesh)
-  mesh.geometry.dispose()
   chunkMeshMap.delete(key)
 }
 
@@ -74,6 +74,7 @@ function addChunkRenderMesh(
   chunkMeshMap: Map<string, DisposableMesh>,
   worldGroup: THREE.Group,
   chunkMeshCache: GpuChunkMeshCache,
+  chunkMeshSlotMap: Map<number, DisposableMesh>,
   material: THREE.MeshStandardNodeMaterial,
   entry: ChunkStreamUpdate['loaded'][number]
 ): void {
@@ -89,12 +90,22 @@ function addChunkRenderMesh(
     return
   }
 
-  const chunkMesh = createGpuChunkRenderMesh(chunkHandle, material)
+  const pooledMesh = chunkMeshSlotMap.get(chunkHandle.slotIndex)
+  const chunkMesh =
+    pooledMesh === undefined
+      ? createGpuChunkRenderMesh(chunkHandle, material).mesh
+      : pooledMesh
   const origin = chunkOrigin(entry.coords)
 
-  chunkMesh.mesh.position.set(origin.x, origin.y, origin.z)
-  worldGroup.add(chunkMesh.mesh)
-  chunkMeshMap.set(key, chunkMesh.mesh)
+  if (pooledMesh === undefined) {
+    chunkMeshSlotMap.set(chunkHandle.slotIndex, chunkMesh)
+  }
+
+  chunkMesh.position.set(origin.x, origin.y, origin.z)
+  chunkMesh.userData.chunkSlotIndex = chunkHandle.slotIndex
+  chunkMesh.visible = true
+  worldGroup.add(chunkMesh)
+  chunkMeshMap.set(key, chunkMesh)
 }
 
 export function syncStreamedGpuChunkMeshes(
@@ -117,6 +128,7 @@ export function syncStreamedGpuChunkMeshes(
       options.chunkMeshMap,
       options.worldGroup,
       options.chunkMeshCache,
+      options.chunkMeshSlotMap,
       options.material,
       entry
     )

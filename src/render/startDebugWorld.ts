@@ -35,8 +35,8 @@ import {
   bytesToMegabytes,
   createInputState,
   type DebugWorldHandle,
+  disposeChunkMeshPool,
   type DisposableMesh,
-  disposeMeshGeometries,
   getJsHeapBytes,
   getPipelineState,
   turnCameraByDegrees,
@@ -139,6 +139,7 @@ export async function startDebugWorld(
   scene.add(worldGroup)
   let chunkMeshes: Array<DisposableMesh> = []
   const chunkMeshMap = new Map<string, DisposableMesh>()
+  const chunkMeshSlotMap = new Map<number, DisposableMesh>()
   let drawCalls = 0
   let totalFaceCount = 0
   let totalTriangleCount = 0
@@ -251,6 +252,7 @@ export async function startDebugWorld(
 
     const result = syncStreamedGpuChunkMeshes({
       chunkMeshCache: activeGpuChunkMeshCache,
+      chunkMeshSlotMap,
       chunkMesher: activeGpuChunkMesher,
       chunkMeshMap,
       gpuVoxelCache: activeGpuVoxelCache,
@@ -414,7 +416,6 @@ export async function startDebugWorld(
 
   const resolveGpuTimestampIfNeeded = (): void => {
     if (
-      !profileRecorder.isRecording() ||
       pendingGpuTimestampResolve !== null ||
       renderFramesSinceGpuResolve < 15
     ) {
@@ -427,7 +428,10 @@ export async function startDebugWorld(
       .then((timestampMs) => {
         if (typeof timestampMs === 'number') {
           lastGpuFrameTimeMs = timestampMs
-          profileRecorder.recordGpuTime(timestampMs)
+
+          if (profileRecorder.isRecording()) {
+            profileRecorder.recordGpuTime(timestampMs)
+          }
         }
       })
       .finally(() => {
@@ -843,12 +847,8 @@ export async function startDebugWorld(
       })
     }
 
-    if (profileRecorder.isRecording()) {
-      renderFramesSinceGpuResolve += 1
-      resolveGpuTimestampIfNeeded()
-    } else {
-      renderFramesSinceGpuResolve = 0
-    }
+    renderFramesSinceGpuResolve += 1
+    resolveGpuTimestampIfNeeded()
 
     applyStatsToHud()
   })
@@ -873,7 +873,7 @@ export async function startDebugWorld(
     )
     uninstallDebugSurface()
     controls.dispose()
-    disposeMeshGeometries(worldGroup)
+    disposeChunkMeshPool(chunkMeshSlotMap)
     gpuChunkMeshCache?.dispose()
     gpuChunkMeshSlab?.dispose()
     gpuChunkVisibilityCuller?.destroy()

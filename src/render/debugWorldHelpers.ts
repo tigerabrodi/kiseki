@@ -56,6 +56,16 @@ export function disposeMeshGeometries(root: THREE.Object3D): void {
   })
 }
 
+export function disposeChunkMeshPool(
+  chunkMeshSlotMap: Map<number, DisposableMesh>
+): void {
+  for (const mesh of new Set(chunkMeshSlotMap.values())) {
+    mesh.geometry.dispose()
+  }
+
+  chunkMeshSlotMap.clear()
+}
+
 export function turnCameraByDegrees(
   camera: THREE.PerspectiveCamera,
   yawDegrees: number,
