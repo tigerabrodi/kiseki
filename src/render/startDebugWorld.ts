@@ -7,6 +7,7 @@ import { FixedStepLoop } from '../core/FixedStepLoop.ts'
 import { buildGpuPipelineInfo } from '../debug/buildGpuPipelineInfo.ts'
 import type { KisekiDebugStats } from '../debug/installKisekiDebugSurface.ts'
 import { GpuChunkMeshCache } from '../gpu/GpuChunkMeshCache.ts'
+import { GpuChunkIndirectDrawCuller } from '../gpu/GpuChunkIndirectDrawCuller.ts'
 import { GpuChunkMeshSlab } from '../gpu/GpuChunkMeshSlab.ts'
 import { GpuTerrainGenerator } from '../gpu/GpuTerrainGenerator.ts'
 import { GpuChunkVoxelCache } from '../gpu/GpuChunkVoxelCache.ts'
@@ -152,6 +153,7 @@ export async function startDebugWorld(
   let voxelChunkMaterial: THREE.MeshStandardNodeMaterial | null = null
   let disposeHdrEnvironment = (): void => {}
   let gpuDevice: GPUDevice | null = null
+  let gpuChunkIndirectDrawCuller: GpuChunkIndirectDrawCuller | null = null
   let gpuChunkMesher: GpuChunkMesher | null = null
   let gpuChunkMeshCache: GpuChunkMeshCache | null = null
   let gpuChunkMeshSlab: GpuChunkMeshSlab | null = null
@@ -221,6 +223,7 @@ export async function startDebugWorld(
     applyStatsToHud()
   }
   const gpuVisibilityTracker = createGpuVisibilityTracker({
+    afterCull: () => gpuChunkIndirectDrawCuller?.apply(),
     getCuller: () => gpuChunkVisibilityCuller,
     onVisibilityInfoChange: () => applyStatsToHud(),
   })
@@ -229,6 +232,7 @@ export async function startDebugWorld(
     getMeshCache: () => gpuChunkMeshCache,
     getMeshSlab: () => gpuChunkMeshSlab,
     onAfterCompaction: () => {
+      gpuVisibilityTracker.cull(camera, true)
       void refreshGpuMeshStats()
     },
   })
@@ -350,7 +354,8 @@ export async function startDebugWorld(
       meshGenerationTimeMs: lastMeshGenerationTimeMs,
       pipelineState: getPipelineState(
         hasGpuFullPipeline,
-        gpuChunkVisibilityCuller !== null
+        gpuChunkVisibilityCuller !== null,
+        gpuChunkIndirectDrawCuller !== null
       ),
       playerChunk,
       position: {
@@ -608,6 +613,7 @@ export async function startDebugWorld(
         overrideChunkCount: voxelOverrideStore.chunkCount(),
         overrideVoxelCount: voxelOverrideStore.voxelCount(),
         usesGpuFrustumCulling: gpuChunkVisibilityCuller !== null,
+        usesGpuIndirectDrawCulling: gpuChunkIndirectDrawCuller !== null,
         usesGpuMeshGeneration: gpuChunkMesher !== null,
         usesGpuMeshRendering: voxelChunkMaterial !== null,
         usesGpuTerrainGeneration: gpuTerrainGenerator !== null,
@@ -624,6 +630,8 @@ export async function startDebugWorld(
     getGpuChunkMeshCache: () => gpuChunkMeshCache,
     getGpuAllocationInfo: () => captureGpuAllocationSnapshot(),
     getGpuDevice: () => gpuDevice,
+    getGpuIndirectDrawInfo: async () =>
+      (await gpuChunkIndirectDrawCuller?.readDrawInfo()) ?? null,
     getGpuMeshCompactionInfo: () =>
       gpuChunkMeshSlab?.getCompactionInfo() ?? null,
     getGpuTerrainErrorMessage: () =>
@@ -676,6 +684,40 @@ export async function startDebugWorld(
     renderer.setSize(width, height)
   }
 
+  const disposeRuntime = (): void => {
+    void renderer.setAnimationLoop(null)
+    window.removeEventListener('resize', resize)
+    document.removeEventListener('keydown', handleKeyDown)
+    document.removeEventListener('keyup', handleKeyUp)
+    controls.removeEventListener('lock', handleLock)
+    controls.removeEventListener('unlock', handleUnlock)
+    lockButton.removeEventListener('click', handleLockButtonClick)
+    profileButton.removeEventListener('click', handleProfileButtonPress)
+    copyProfileButton.removeEventListener('click', handleCopyProfileButtonPress)
+    renderer.domElement.removeEventListener(
+      'mousedown',
+      handleViewportMouseDown
+    )
+    renderer.domElement.removeEventListener(
+      'contextmenu',
+      handleViewportContextMenu
+    )
+    uninstallDebugSurface()
+    controls.dispose()
+    disposeChunkMeshPool(chunkMeshSlotMap)
+    gpuChunkMeshCache?.dispose()
+    gpuChunkMeshSlab?.dispose()
+    gpuChunkIndirectDrawCuller?.destroy()
+    gpuChunkVisibilityCuller?.destroy()
+    gpuChunkMesher?.destroy()
+    gpuTerrainGenerator?.destroy()
+    gpuVoxelCache?.dispose()
+    gpuVoxelSlab?.dispose()
+    disposeHdrEnvironment()
+    voxelChunkMaterial?.dispose()
+    void renderer.dispose()
+  }
+
   window.addEventListener('resize', resize)
   resize()
 
@@ -705,6 +747,11 @@ export async function startDebugWorld(
     gpuChunkVisibilityCuller = new GpuChunkVisibilityCuller(
       renderer,
       maxRetainedChunkCount
+    )
+    gpuChunkIndirectDrawCuller = new GpuChunkIndirectDrawCuller(
+      gpuDevice,
+      gpuChunkVisibilityCuller.getDrawState(),
+      gpuChunkMeshSlab.getIndirectDrawState()
     )
     gpuChunkMeshCache = new GpuChunkMeshCache(
       (entry) => {
@@ -751,34 +798,7 @@ export async function startDebugWorld(
         : 'Unknown WebGPU initialization error or texture load failure'
     viewport.append(message)
 
-    window.removeEventListener('resize', resize)
-    document.removeEventListener('keydown', handleKeyDown)
-    document.removeEventListener('keyup', handleKeyUp)
-    controls.removeEventListener('lock', handleLock)
-    controls.removeEventListener('unlock', handleUnlock)
-    lockButton.removeEventListener('click', handleLockButtonClick)
-    profileButton.removeEventListener('click', handleProfileButtonPress)
-    copyProfileButton.removeEventListener('click', handleCopyProfileButtonPress)
-    renderer.domElement.removeEventListener(
-      'mousedown',
-      handleViewportMouseDown
-    )
-    renderer.domElement.removeEventListener(
-      'contextmenu',
-      handleViewportContextMenu
-    )
-    uninstallDebugSurface()
-    controls.dispose()
-    gpuChunkMeshCache?.dispose()
-    gpuChunkMeshSlab?.dispose()
-    gpuChunkVisibilityCuller?.destroy()
-    gpuChunkMesher?.destroy()
-    gpuTerrainGenerator?.destroy()
-    gpuVoxelCache?.dispose()
-    gpuVoxelSlab?.dispose()
-    disposeHdrEnvironment()
-    voxelChunkMaterial?.dispose()
-    void renderer.dispose()
+    disposeRuntime()
 
     return () => {
       root.innerHTML = ''
@@ -854,36 +874,7 @@ export async function startDebugWorld(
   })
 
   return () => {
-    void renderer.setAnimationLoop(null)
-    window.removeEventListener('resize', resize)
-    document.removeEventListener('keydown', handleKeyDown)
-    document.removeEventListener('keyup', handleKeyUp)
-    controls.removeEventListener('lock', handleLock)
-    controls.removeEventListener('unlock', handleUnlock)
-    lockButton.removeEventListener('click', handleLockButtonClick)
-    profileButton.removeEventListener('click', handleProfileButtonPress)
-    copyProfileButton.removeEventListener('click', handleCopyProfileButtonPress)
-    renderer.domElement.removeEventListener(
-      'mousedown',
-      handleViewportMouseDown
-    )
-    renderer.domElement.removeEventListener(
-      'contextmenu',
-      handleViewportContextMenu
-    )
-    uninstallDebugSurface()
-    controls.dispose()
-    disposeChunkMeshPool(chunkMeshSlotMap)
-    gpuChunkMeshCache?.dispose()
-    gpuChunkMeshSlab?.dispose()
-    gpuChunkVisibilityCuller?.destroy()
-    gpuChunkMesher?.destroy()
-    gpuTerrainGenerator?.destroy()
-    gpuVoxelCache?.dispose()
-    gpuVoxelSlab?.dispose()
-    disposeHdrEnvironment()
-    voxelChunkMaterial?.dispose()
-    void renderer.dispose()
+    disposeRuntime()
     root.innerHTML = ''
   }
 }

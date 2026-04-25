@@ -97,10 +97,15 @@ export function bytesToMegabytes(bytes: number): number {
 
 export function getPipelineState(
   hasGpuFullPipeline: boolean,
-  hasGpuVisibilityCulling: boolean
+  hasGpuVisibilityCulling: boolean,
+  hasGpuIndirectDrawCulling: boolean
 ): string {
   if (!hasGpuFullPipeline) {
     return 'Mixed'
+  }
+
+  if (hasGpuIndirectDrawCulling) {
+    return 'GPU Full + Indirect'
   }
 
   return hasGpuVisibilityCulling ? 'GPU Full + Cull' : 'GPU Full'

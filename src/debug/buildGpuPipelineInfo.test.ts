@@ -19,6 +19,7 @@ describe('buildGpuPipelineInfo', () => {
         overrideChunkCount: 1,
         overrideVoxelCount: 3,
         usesGpuFrustumCulling: true,
+        usesGpuIndirectDrawCulling: true,
         usesGpuMeshGeneration: true,
         usesGpuMeshRendering: true,
         usesGpuTerrainGeneration: true,
@@ -34,6 +35,7 @@ describe('buildGpuPipelineInfo', () => {
       overrideChunkCount: 1,
       overrideVoxelCount: 3,
       usesGpuFrustumCulling: true,
+      usesGpuIndirectDrawCulling: true,
       usesGpuMeshGeneration: true,
       usesGpuMeshRendering: true,
       usesGpuTerrainGeneration: true,
@@ -53,6 +55,7 @@ describe('buildGpuPipelineInfo', () => {
       overrideChunkCount: 0,
       overrideVoxelCount: 0,
       usesGpuFrustumCulling: false,
+      usesGpuIndirectDrawCulling: false,
       usesGpuMeshGeneration: true,
       usesGpuMeshRendering: true,
       usesGpuTerrainGeneration: true,
@@ -61,6 +64,7 @@ describe('buildGpuPipelineInfo', () => {
     expect(info.cpuPlaceholderChunkCount).toBe(0)
     expect(info.cpuSolidVoxelCount).toBe(1)
     expect(info.usesGpuFrustumCulling).toBe(false)
+    expect(info.usesGpuIndirectDrawCulling).toBe(false)
     expect(info.voxelDataLivesOnGpu).toBe(false)
     expect(info.isFullyGpuDriven).toBe(false)
   })

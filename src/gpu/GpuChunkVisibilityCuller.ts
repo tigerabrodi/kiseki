@@ -63,6 +63,12 @@ export type GpuChunkVisibilityMaterialState = {
   visibilityWordCount: number
 }
 
+export type GpuChunkVisibilityDrawState = {
+  slotCount: number
+  visibilityBuffer: GPUBuffer
+  visibilityWordCount: number
+}
+
 export class GpuChunkVisibilityCuller {
   private readonly bindGroup: GPUBindGroup
   private readonly boundsBuffer: GPUBuffer
@@ -175,6 +181,14 @@ export class GpuChunkVisibilityCuller {
   getMaterialState(): GpuChunkVisibilityMaterialState {
     return {
       visibilityAttribute: this.visibilityAttribute,
+      visibilityWordCount: this.visibilityWordCount(),
+    }
+  }
+
+  getDrawState(): GpuChunkVisibilityDrawState {
+    return {
+      slotCount: this.capacityValue,
+      visibilityBuffer: this.visibilityBuffer,
       visibilityWordCount: this.visibilityWordCount(),
     }
   }

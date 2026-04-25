@@ -30,6 +30,9 @@ import { readGpuBufferToUint32Array } from './GpuVoxelBuffer.ts'
 import { getGpuBufferUsage } from './webGpuStatics.ts'
 
 const ZERO_MESH_COUNTERS = new Uint32Array(4)
+const ZERO_INDIRECT_DRAW_ARGS = new Uint32Array(
+  GPU_CHUNK_MESH_INDIRECT_WORD_COUNT
+)
 
 function alignTo(byteLength: number, alignment: number): number {
   const remainder = byteLength % alignment
@@ -53,6 +56,13 @@ export type GpuMeshCompactionInfo = {
   reservedVertexByteLength: number
   stagingIndexByteLength: number
   stagingVertexByteLength: number
+}
+
+export type GpuChunkMeshIndirectDrawState = {
+  indirectBuffer: GPUBuffer
+  indirectByteLength: number
+  indirectTemplateBuffer: GPUBuffer
+  slotCount: number
 }
 
 function createEmptyCompactionInfo(
@@ -86,6 +96,7 @@ export class GpuChunkMeshSlab {
   private readonly device: GPUDevice
   private readonly indirectAttribute: THREE.IndirectStorageBufferAttribute
   private readonly indirectBuffer: GPUBuffer
+  private readonly indirectTemplateBuffer: GPUBuffer
   private readonly indexAttribute: THREE.StorageBufferAttribute
   private readonly renderIndexBuffer: GPUBuffer
   private readonly renderIndexByteLength: number
@@ -151,6 +162,14 @@ export class GpuChunkMeshSlab {
       backend,
       this.indirectAttribute
     )
+    this.indirectTemplateBuffer = this.device.createBuffer({
+      label: 'chunk_mesh_indirect_templates',
+      size: capacity * GPU_CHUNK_MESH_INDIRECT_BYTE_LENGTH,
+      usage:
+        gpuBufferUsage.STORAGE |
+        gpuBufferUsage.COPY_DST |
+        gpuBufferUsage.COPY_SRC,
+    })
     this.countsBuffer = this.device.createBuffer({
       label: 'chunk_mesh_counts_slab',
       size: capacity * this.countsSlotByteLength,
@@ -189,7 +208,7 @@ export class GpuChunkMeshSlab {
       this.lastCompactionInfo.activeVertexByteLength +
       this.lastCompactionInfo.activeIndexByteLength +
       this.activeCount() *
-        (this.countsSlotByteLength + GPU_CHUNK_MESH_INDIRECT_BYTE_LENGTH)
+        (this.countsSlotByteLength + GPU_CHUNK_MESH_INDIRECT_BYTE_LENGTH * 2)
     )
   }
 
@@ -217,6 +236,11 @@ export class GpuChunkMeshSlab {
       this.indirectBuffer,
       indirectByteOffset,
       createGpuChunkIndirectDrawTemplate(0, 0)
+    )
+    this.device.queue.writeBuffer(
+      this.indirectTemplateBuffer,
+      indirectByteOffset,
+      ZERO_INDIRECT_DRAW_ARGS
     )
 
     return {
@@ -326,6 +350,15 @@ export class GpuChunkMeshSlab {
         handle.indexByteOffset = assignment.indexByteOffset
         handle.indexByteLength = assignment.indexByteLength
         this.device.queue.writeBuffer(
+          this.indirectTemplateBuffer,
+          handle.indirectByteOffset,
+          createGpuChunkIndirectDrawArgs(
+            assignment.indexCount,
+            assignment.firstIndex,
+            assignment.baseVertex
+          )
+        )
+        this.device.queue.writeBuffer(
           this.indirectBuffer,
           handle.indirectByteOffset,
           createGpuChunkIndirectDrawArgs(
@@ -343,6 +376,11 @@ export class GpuChunkMeshSlab {
       handle.vertexByteLength = 0
       handle.indexByteOffset = 0
       handle.indexByteLength = 0
+      this.device.queue.writeBuffer(
+        this.indirectTemplateBuffer,
+        handle.indirectByteOffset,
+        ZERO_INDIRECT_DRAW_ARGS
+      )
       this.device.queue.writeBuffer(
         this.indirectBuffer,
         handle.indirectByteOffset,
@@ -377,6 +415,7 @@ export class GpuChunkMeshSlab {
 
   dispose(): void {
     this.countsBuffer.destroy()
+    this.indirectTemplateBuffer.destroy()
     this.stagingIndexBuffer.destroy()
     this.stagingVertexBuffer.destroy()
   }
@@ -385,13 +424,22 @@ export class GpuChunkMeshSlab {
     return this.lastCompactionInfo
   }
 
+  getIndirectDrawState(): GpuChunkMeshIndirectDrawState {
+    return {
+      indirectBuffer: this.indirectBuffer,
+      indirectByteLength: GPU_CHUNK_MESH_INDIRECT_BYTE_LENGTH,
+      indirectTemplateBuffer: this.indirectTemplateBuffer,
+      slotCount: this.capacityValue,
+    }
+  }
+
   getRuntimeStats(): GpuPoolRuntimeStats {
     return {
       activeByteLength: this.activeByteLength(),
       activeCount: this.activeCount(),
       allocationCount: this.allocationCount,
       availableCount: this.allocator.availableCount(),
-      bufferCount: 6,
+      bufferCount: 7,
       capacity: this.capacity(),
       highWaterCount: this.highWaterCount,
       releaseCount: this.releaseCount,
@@ -412,6 +460,11 @@ export class GpuChunkMeshSlab {
       ZERO_MESH_COUNTERS
     )
     this.device.queue.writeBuffer(
+      this.indirectTemplateBuffer,
+      handle.indirectByteOffset,
+      ZERO_INDIRECT_DRAW_ARGS
+    )
+    this.device.queue.writeBuffer(
       this.indirectBuffer,
       handle.indirectByteOffset,
       createGpuChunkIndirectDrawTemplate(0, 0)
@@ -430,6 +483,7 @@ export class GpuChunkMeshSlab {
     return (
       this.capacityValue *
         (this.countsSlotByteLength + GPU_CHUNK_MESH_INDIRECT_BYTE_LENGTH) +
+      this.capacityValue * GPU_CHUNK_MESH_INDIRECT_BYTE_LENGTH +
       this.renderVertexByteLength +
       this.renderIndexByteLength +
       this.stagingVertexByteLength +
