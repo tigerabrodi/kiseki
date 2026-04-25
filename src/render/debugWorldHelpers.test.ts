@@ -8,5 +8,8 @@ describe('getPipelineState', () => {
     expect(getPipelineState(true, false, false)).toBe('GPU Full')
     expect(getPipelineState(true, true, false)).toBe('GPU Full + Cull')
     expect(getPipelineState(true, true, true)).toBe('GPU Full + Indirect')
+    expect(getPipelineState(true, true, true, true)).toBe(
+      'GPU Full + Occlusion'
+    )
   })
 })

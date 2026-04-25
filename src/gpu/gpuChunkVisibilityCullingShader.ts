@@ -19,6 +19,7 @@ struct FrustumParams {
 @group(0) @binding(0) var<storage, read> chunk_bounds: array<ChunkBounds>;
 @group(0) @binding(1) var<storage, read_write> visibility_words: array<atomic<u32>>;
 @group(0) @binding(2) var<uniform> params: FrustumParams;
+@group(0) @binding(3) var<storage, read> occlusion_words: array<u32>;
 
 fn is_chunk_visible(origin: vec3<f32>) -> bool {
   let extents = vec3<f32>(${CHUNK_SIZE / 2}.0, ${CHUNK_SIZE / 2}.0, ${CHUNK_SIZE / 2}.0);
@@ -37,6 +38,23 @@ fn is_chunk_visible(origin: vec3<f32>) -> bool {
   return true;
 }
 
+fn is_chunk_occlusion_visible(slot_index: u32) -> bool {
+  if (params.counts.z == 0u) {
+    return true;
+  }
+
+  let word_index = slot_index >> 5u;
+
+  if (word_index >= params.counts.y) {
+    return false;
+  }
+
+  let word = occlusion_words[word_index];
+  let bit_index = slot_index & 31u;
+
+  return ((word >> bit_index) & 1u) == 1u;
+}
+
 @compute @workgroup_size(${GPU_CHUNK_VISIBILITY_CULL_WORKGROUP_SIZE}, 1, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
   let slot_index = global_id.x;
@@ -52,6 +70,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
   }
 
   if (!is_chunk_visible(chunk_bound.xyz)) {
+    return;
+  }
+
+  if (!is_chunk_occlusion_visible(slot_index)) {
     return;
   }
 

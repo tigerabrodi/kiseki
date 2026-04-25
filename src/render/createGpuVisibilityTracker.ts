@@ -7,6 +7,7 @@ import type {
 
 type CreateGpuVisibilityTrackerOptions = {
   afterCull?: (forceRefresh: boolean) => void
+  beforeCull?: () => void
   getCuller: () => GpuChunkVisibilityCuller | null
   onVisibilityInfoChange: () => void
   refreshEveryFrames?: number
@@ -57,6 +58,7 @@ export function createGpuVisibilityTracker(
         return
       }
 
+      options.beforeCull?.()
       culler.cull(camera)
       options.afterCull?.(forceRefresh)
       framesSinceVisibilityResolve += 1

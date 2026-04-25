@@ -6,6 +6,7 @@ import {
   type KisekiDebugStats,
   type KisekiGpuMeshCompactionInfo,
   type KisekiGpuIndirectDrawInfo,
+  type KisekiGpuOcclusionInfo,
   type KisekiGpuPipelineInfo,
   type KisekiGpuVisibilityInfo,
   type KisekiMaterialGalleryInfo,
@@ -48,6 +49,7 @@ type InstallDebugWorldSurfaceOptions = {
   getGpuDevice: () => GPUDevice | null
   getGpuIndirectDrawInfo: () => Promise<KisekiGpuIndirectDrawInfo>
   getGpuMeshCompactionInfo: () => KisekiGpuMeshCompactionInfo
+  getGpuOcclusionInfo: () => Promise<KisekiGpuOcclusionInfo>
   getGpuTerrainErrorMessage: () => string | null
   getGpuVisibilityInfo: () => Promise<KisekiGpuVisibilityInfo>
   getGpuVoxelCache: () => GpuChunkVoxelCache | null
@@ -138,6 +140,7 @@ export function installDebugWorldSurface(
       ),
     getGpuIndirectDrawInfo: options.getGpuIndirectDrawInfo,
     getGpuMeshCompactionInfo: options.getGpuMeshCompactionInfo,
+    getGpuOcclusionInfo: options.getGpuOcclusionInfo,
     getGpuMeshInfo: (x: number, y: number, z: number) =>
       getGpuChunkMeshInfo(
         { x, y, z },

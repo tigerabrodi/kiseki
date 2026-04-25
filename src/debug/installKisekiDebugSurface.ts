@@ -4,6 +4,7 @@ import type { GpuPipelineInfo } from './buildGpuPipelineInfo.ts'
 import type { GpuAllocationSnapshot } from '../gpu/buildGpuAllocationSnapshot.ts'
 import type { ChunkMeshComparison } from '../mesh/compareChunkMeshes.ts'
 import type { GpuMeshCompactionInfo } from '../gpu/GpuChunkMeshSlab.ts'
+import type { GpuChunkOcclusionInfo } from '../gpu/GpuChunkOcclusionCuller.ts'
 import type { GpuChunkVisibilityInfo } from '../gpu/GpuChunkVisibilityCuller.ts'
 import type { GpuIndirectDrawInfo } from '../gpu/GpuChunkIndirectDrawCuller.ts'
 import type {
@@ -103,6 +104,7 @@ export type KisekiGpuMeshInfo = {
 export type KisekiGpuMeshCompactionInfo = GpuMeshCompactionInfo | null
 export type KisekiGpuAllocationInfo = GpuAllocationSnapshot | null
 export type KisekiGpuIndirectDrawInfo = GpuIndirectDrawInfo | null
+export type KisekiGpuOcclusionInfo = GpuChunkOcclusionInfo | null
 export type KisekiGpuVisibilityInfo = GpuChunkVisibilityInfo | null
 
 export type KisekiGpuPipelineInfo = GpuPipelineInfo | null
@@ -131,6 +133,7 @@ export type KisekiDebugSurface = {
   getGpuAllocationInfo: () => KisekiGpuAllocationInfo
   getGpuChunkInfo: (x: number, y: number, z: number) => KisekiGpuChunkInfo
   getGpuMeshCompactionInfo: () => KisekiGpuMeshCompactionInfo
+  getGpuOcclusionInfo: () => Promise<KisekiGpuOcclusionInfo>
   getGpuMeshInfo: (x: number, y: number, z: number) => KisekiGpuMeshInfo
   getGpuIndirectDrawInfo: () => Promise<KisekiGpuIndirectDrawInfo>
   getGpuPipelineInfo: () => KisekiGpuPipelineInfo

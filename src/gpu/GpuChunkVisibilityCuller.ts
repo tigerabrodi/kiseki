@@ -19,6 +19,7 @@ import {
 import { getGpuBufferUsage } from './webGpuStatics.ts'
 import { CHUNK_SIZE } from '../voxel/chunk.ts'
 import type { ChunkCoordinates } from '../world/World.ts'
+import type { GpuChunkOcclusionState } from './GpuChunkOcclusionCuller.ts'
 
 const BOUNDS_WORD_COUNT = 4
 
@@ -36,6 +37,7 @@ function createBoundsData(
 
 function createCullingParamData(
   camera: THREE.Camera,
+  isOcclusionEnabled: boolean,
   slotCount: number
 ): ArrayBuffer {
   const buffer = new ArrayBuffer(GPU_CHUNK_VISIBILITY_PARAM_BYTE_LENGTH)
@@ -46,7 +48,7 @@ function createCullingParamData(
   floatView.set(frustumPlanes, 0)
   uintView[24] = slotCount >>> 0
   uintView[25] = Math.ceil(slotCount / 32) >>> 0
-  uintView[26] = 0
+  uintView[26] = isOcclusionEnabled ? 1 : 0
   uintView[27] = 0
 
   return buffer
@@ -70,10 +72,12 @@ export type GpuChunkVisibilityDrawState = {
 }
 
 export class GpuChunkVisibilityCuller {
-  private readonly bindGroup: GPUBindGroup
+  private bindGroup: GPUBindGroup
   private readonly boundsBuffer: GPUBuffer
   private readonly capacityValue: number
   private readonly device: GPUDevice
+  private readonly fallbackOcclusionBuffer: GPUBuffer
+  private isOcclusionEnabled = false
   private readonly paramBuffer: GPUBuffer
   private readonly pipeline: GPUComputePipeline
   private readonly visibilityAttribute: THREE.StorageBufferAttribute
@@ -116,12 +120,26 @@ export class GpuChunkVisibilityCuller {
       backend,
       this.visibilityAttribute
     )
+    this.fallbackOcclusionBuffer = backend.device.createBuffer({
+      label: 'chunk_visibility_fallback_occlusion_words',
+      size: this.visibilityWordCountValue * Uint32Array.BYTES_PER_ELEMENT,
+      usage: gpuBufferUsage.STORAGE | gpuBufferUsage.COPY_DST,
+    })
+    backend.device.queue.writeBuffer(
+      this.fallbackOcclusionBuffer,
+      0,
+      new Uint32Array(this.visibilityWordCountValue).fill(0xffffffff)
+    )
     this.paramBuffer = backend.device.createBuffer({
       label: 'chunk_visibility_params',
       size: GPU_CHUNK_VISIBILITY_PARAM_BYTE_LENGTH,
       usage: gpuBufferUsage.UNIFORM | gpuBufferUsage.COPY_DST,
     })
-    this.bindGroup = backend.device.createBindGroup({
+    this.bindGroup = this.createBindGroup(this.fallbackOcclusionBuffer)
+  }
+
+  private createBindGroup(occlusionBuffer: GPUBuffer): GPUBindGroup {
+    return this.device.createBindGroup({
       label: 'chunk_visibility_culling_bind_group',
       layout: this.pipeline.getBindGroupLayout(0),
       entries: [
@@ -143,6 +161,12 @@ export class GpuChunkVisibilityCuller {
             buffer: this.paramBuffer,
           },
         },
+        {
+          binding: 3,
+          resource: {
+            buffer: occlusionBuffer,
+          },
+        },
       ],
     })
   }
@@ -151,7 +175,11 @@ export class GpuChunkVisibilityCuller {
     this.device.queue.writeBuffer(
       this.paramBuffer,
       0,
-      createCullingParamData(camera, this.capacityValue)
+      createCullingParamData(
+        camera,
+        this.isOcclusionEnabled,
+        this.capacityValue
+      )
     )
 
     const encoder = this.device.createCommandEncoder({
@@ -175,6 +203,7 @@ export class GpuChunkVisibilityCuller {
 
   destroy(): void {
     this.boundsBuffer.destroy()
+    this.fallbackOcclusionBuffer.destroy()
     this.paramBuffer.destroy()
   }
 
@@ -226,5 +255,12 @@ export class GpuChunkVisibilityCuller {
 
   visibilityWordCount(): number {
     return this.visibilityWordCountValue
+  }
+
+  setOcclusionState(state: GpuChunkOcclusionState | null): void {
+    this.isOcclusionEnabled = state !== null
+    this.bindGroup = this.createBindGroup(
+      state?.occlusionBuffer ?? this.fallbackOcclusionBuffer
+    )
   }
 }

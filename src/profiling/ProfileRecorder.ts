@@ -202,7 +202,7 @@ export function formatProfileReport(report: ProfileReport): string {
   }
 
   const lines = [
-    'Kiseki Profile Checkpoint 5',
+    'Kiseki Profile Checkpoint 6',
     `Duration: ${report.durationSeconds.toFixed(1)} s`,
     `Frames: ${report.frameCount}`,
     `FPS avg/min/max: ${formatMetric(report.fps)}`,

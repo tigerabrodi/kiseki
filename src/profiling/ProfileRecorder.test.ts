@@ -285,7 +285,7 @@ describe('ProfileRecorder', () => {
 
     expect(report).not.toBeNull()
     expect(formatProfileReport(report!)).toContain(
-      'Kiseki Profile Checkpoint 5'
+      'Kiseki Profile Checkpoint 6'
     )
     expect(formatProfileReport(report!)).toContain('FPS avg/min/max')
     expect(formatProfileReport(report!)).toContain('CPU @60Hz budget avg/max')

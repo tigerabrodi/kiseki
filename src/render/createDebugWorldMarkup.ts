@@ -2,10 +2,10 @@ export function createDebugWorldMarkup(): string {
   return `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Step 29</p>
-        <h1 class="title">GPU Indirect Draws</h1>
+        <p class="eyebrow">Kiseki / Step 31</p>
+        <h1 class="title">GPU Cave Culling</h1>
         <p class="subtitle">
-          Chunk visibility now flows into GPU-written indirect draw args. Turn fast, fly wide, and use the debug surface to watch invisible chunk commands get zeroed without CPU-side render decisions.
+          Chunk reachability now flood-fills on the GPU from the player chunk before frustum and indirect draw masking decide what actually renders.
         </p>
         <dl class="stats">
           <div class="stats-card">
@@ -118,12 +118,12 @@ export function createDebugWorldMarkup(): string {
           </button>
         </div>
         <pre class="profile-report" data-profile-report>
-Press Start Profile Run, fly around for a bit, turn the camera hard, then stop to capture a fresh GPU indirect-draw run.
+Press Start Profile Run, fly through open terrain and dense slopes, then stop to capture a fresh GPU occlusion run.
         </pre>
       </div>
       <div class="viewport" data-viewport></div>
       <div class="crosshair" aria-hidden="true"></div>
-      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. Left click breaks, right click places cobblestone. The CPU keeps only empty chunk placeholders plus sparse edit overrides while live voxels, meshes, visibility, and indirect draw masking stay on the GPU.</p>
+      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. Left click breaks, right click places cobblestone. The CPU keeps only empty chunk placeholders plus sparse edit overrides while live voxels, meshes, visibility, occlusion, and indirect draw masking stay on the GPU.</p>
     </main>
   `
 }
