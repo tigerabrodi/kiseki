@@ -10,6 +10,7 @@ import type {
   ProfileReport,
   ProfileSessionState,
 } from '../profiling/ProfileRecorder.ts'
+import type { VoxelMaterialGalleryInfo } from '../render/createVoxelMaterialGallery.ts'
 import type { VoxelMaterialComparison } from '../voxel/compareVoxelMaterials.ts'
 import type { ChunkStreamer } from '../world/ChunkStreamer.ts'
 import type { ChunkCoordinates } from '../world/World.ts'
@@ -105,6 +106,7 @@ export type KisekiGpuIndirectDrawInfo = GpuIndirectDrawInfo | null
 export type KisekiGpuVisibilityInfo = GpuChunkVisibilityInfo | null
 
 export type KisekiGpuPipelineInfo = GpuPipelineInfo | null
+export type KisekiMaterialGalleryInfo = VoxelMaterialGalleryInfo | null
 
 export type KisekiVoxelEditResult = {
   didEdit: boolean
@@ -135,6 +137,7 @@ export type KisekiDebugSurface = {
   getGpuTerrainInfo: () => KisekiGpuTerrainInfo
   getGpuVisibilityInfo: () => Promise<KisekiGpuVisibilityInfo>
   getMeshInfo: () => KisekiMeshInfo
+  getMaterialGalleryInfo: () => KisekiMaterialGalleryInfo
   getProfileReport: () => ProfileReport | null
   getProfileState: () => ProfileSessionState
   getSceneInfo: () => KisekiSceneInfo
@@ -146,6 +149,7 @@ export type KisekiDebugSurface = {
     z: number
   ) => Promise<Array<number> | null>
   setCameraPosition: (x: number, y: number, z: number) => void
+  setMaterialGalleryVisible: (isVisible: boolean) => boolean
   startProfileSession: () => void
   stopProfileSession: () => Promise<ProfileReport | null>
   syncWorld: () => void

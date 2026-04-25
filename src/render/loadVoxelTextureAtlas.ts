@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu'
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js'
 
-type VoxelTextureAtlasManifest = {
+export type VoxelTextureAtlasManifest = {
   cellSize: number
   format: string
   layerCount: number

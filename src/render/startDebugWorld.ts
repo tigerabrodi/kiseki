@@ -30,9 +30,14 @@ import {
 import { Chunk } from '../voxel/chunk.ts'
 import { applyProfileHud as renderProfileHud } from './applyProfileHud.ts'
 import { createDebugWorldMarkup } from './createDebugWorldMarkup.ts'
+import { createDebugWorldScene } from './createDebugWorldScene.ts'
 import { createGpuIndirectDrawProfileSampler } from './createGpuIndirectDrawProfileSampler.ts'
 import { createGpuVisibilityTracker } from './createGpuVisibilityTracker.ts'
 import { createVoxelChunkMaterial } from './createVoxelChunkMaterial.ts'
+import {
+  createVoxelMaterialGallery,
+  type VoxelMaterialGallery,
+} from './createVoxelMaterialGallery.ts'
 import {
   bytesToMegabytes,
   createInputState,
@@ -45,6 +50,7 @@ import {
   updatePointerHud,
 } from './debugWorldHelpers.ts'
 import { getDebugWorldElements } from './getDebugWorldElements.ts'
+import { installDebugWorldEventHandlers } from './installDebugWorldEventHandlers.ts'
 import { installDebugWorldSurface } from './installDebugWorldSurface.ts'
 import { createGpuMeshCompactionScheduler } from './createGpuMeshCompactionScheduler.ts'
 import { loadHdrEnvironment } from './loadHdrEnvironment.ts'
@@ -103,32 +109,8 @@ export async function startDebugWorld(
     }
   }
 
-  const renderer = new THREE.WebGPURenderer({
-    antialias: true,
-    trackTimestamp: true,
-  })
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-  renderer.outputColorSpace = THREE.SRGBColorSpace
-  viewport.append(renderer.domElement)
-
-  const scene = new THREE.Scene()
-  scene.background = new THREE.Color(0x04060b)
-  scene.backgroundBlurriness = 0.18
-  scene.backgroundIntensity = 0.45
-  scene.environmentIntensity = 0.9
-
-  const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 320)
+  const { camera, canvas, renderer, scene } = createDebugWorldScene(viewport)
   const movementSpeed = 8
-
-  scene.add(new THREE.AmbientLight(0xf4efe4, 0.45))
-
-  const keyLight = new THREE.DirectionalLight(0xf6d6a7, 1.7)
-  keyLight.position.set(14, 18, 8)
-  scene.add(keyLight)
-
-  const fillLight = new THREE.DirectionalLight(0x6eb7ff, 0.55)
-  fillLight.position.set(-10, 8, -12)
-  scene.add(fillLight)
 
   const terrainGenerator = new TerrainGenerator({ seed: 'kiseki' })
   const chunkStreamer = new ChunkStreamer({
@@ -152,6 +134,7 @@ export async function startDebugWorld(
   let lastTerrainGenerationTimeMs = 0
   let hdrEnvironmentName: string | null = null
   let voxelChunkMaterial: THREE.MeshStandardNodeMaterial | null = null
+  let voxelMaterialGallery: VoxelMaterialGallery | null = null
   let disposeHdrEnvironment = (): void => {}
   let gpuDevice: GPUDevice | null = null
   let gpuChunkIndirectDrawCuller: GpuChunkIndirectDrawCuller | null = null
@@ -320,7 +303,7 @@ export async function startDebugWorld(
   camera.lookAt(flyTarget)
   camera.updateMatrixWorld()
 
-  const controls = new PointerLockControls(camera, renderer.domElement)
+  const controls = new PointerLockControls(camera, canvas)
   controls.pointerSpeed = 0.75
 
   const inputState = createInputState()
@@ -594,15 +577,22 @@ export async function startDebugWorld(
     event.preventDefault()
   }
 
-  document.addEventListener('keydown', handleKeyDown)
-  document.addEventListener('keyup', handleKeyUp)
-  controls.addEventListener('lock', handleLock)
-  controls.addEventListener('unlock', handleUnlock)
-  lockButton.addEventListener('click', handleLockButtonClick)
-  profileButton.addEventListener('click', handleProfileButtonPress)
-  copyProfileButton.addEventListener('click', handleCopyProfileButtonPress)
-  renderer.domElement.addEventListener('mousedown', handleViewportMouseDown)
-  renderer.domElement.addEventListener('contextmenu', handleViewportContextMenu)
+  const uninstallEventHandlers = installDebugWorldEventHandlers({
+    canvas,
+    controls,
+    copyProfileButton,
+    handleCopyProfileButtonPress,
+    handleKeyDown,
+    handleKeyUp,
+    handleLock,
+    handleLockButtonClick,
+    handleProfileButtonPress,
+    handleUnlock,
+    handleViewportContextMenu,
+    handleViewportMouseDown,
+    lockButton,
+    profileButton,
+  })
   updatePointerState()
 
   fixedRateValue.textContent = '60'
@@ -644,6 +634,7 @@ export async function startDebugWorld(
     getGpuVisibilityInfo: () => gpuVisibilityTracker.readInfo(),
     getGpuVoxelCache: () => gpuVoxelCache,
     getHdrEnvironmentName: () => hdrEnvironmentName,
+    getMaterialGalleryInfo: () => voxelMaterialGallery?.info() ?? null,
     getProfileReport: () => profileRecorder.getLastReport(),
     getProfileState: () => profileRecorder.getSessionState(performance.now()),
     getScene: () => scene,
@@ -655,6 +646,11 @@ export async function startDebugWorld(
       camera.updateMatrixWorld()
       syncStreamedWorld(currentCameraPosition)
       gpuVisibilityTracker.cull(camera, true)
+    },
+    setMaterialGalleryVisible: (isVisible: boolean): boolean => {
+      voxelMaterialGallery?.setVisible(isVisible)
+      voxelMaterialGallery?.syncToCamera(camera)
+      return voxelMaterialGallery?.info().isVisible ?? false
     },
     startProfileSession: (): void => {
       profileRecorder.start(performance.now(), captureGpuAllocationSnapshot())
@@ -693,21 +689,7 @@ export async function startDebugWorld(
   const disposeRuntime = (): void => {
     void renderer.setAnimationLoop(null)
     window.removeEventListener('resize', resize)
-    document.removeEventListener('keydown', handleKeyDown)
-    document.removeEventListener('keyup', handleKeyUp)
-    controls.removeEventListener('lock', handleLock)
-    controls.removeEventListener('unlock', handleUnlock)
-    lockButton.removeEventListener('click', handleLockButtonClick)
-    profileButton.removeEventListener('click', handleProfileButtonPress)
-    copyProfileButton.removeEventListener('click', handleCopyProfileButtonPress)
-    renderer.domElement.removeEventListener(
-      'mousedown',
-      handleViewportMouseDown
-    )
-    renderer.domElement.removeEventListener(
-      'contextmenu',
-      handleViewportContextMenu
-    )
+    uninstallEventHandlers()
     uninstallDebugSurface()
     controls.dispose()
     disposeChunkMeshPool(chunkMeshSlotMap)
@@ -715,6 +697,7 @@ export async function startDebugWorld(
     gpuChunkMeshSlab?.dispose()
     gpuChunkIndirectDrawCuller?.destroy()
     gpuChunkVisibilityCuller?.destroy()
+    voxelMaterialGallery?.dispose()
     gpuChunkMesher?.destroy()
     gpuTerrainGenerator?.destroy()
     gpuVoxelCache?.dispose()
@@ -790,6 +773,8 @@ export async function startDebugWorld(
       atlas,
       gpuChunkVisibilityCuller?.getMaterialState()
     )
+    voxelMaterialGallery = createVoxelMaterialGallery(atlas)
+    scene.add(voxelMaterialGallery.group)
     scene.background = hdrEnvironment.backgroundTexture
     scene.environment = hdrEnvironment.environmentTexture
     hdrEnvironmentName = hdrEnvironment.environmentName
@@ -856,6 +841,7 @@ export async function startDebugWorld(
     syncStreamedWorld(currentCameraPosition)
     updatePointerState()
     gpuVisibilityTracker.cull(camera)
+    voxelMaterialGallery?.syncToCamera(camera)
 
     void renderer.render(scene, camera)
 

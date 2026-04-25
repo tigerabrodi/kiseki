@@ -8,6 +8,7 @@ import {
   type KisekiGpuIndirectDrawInfo,
   type KisekiGpuPipelineInfo,
   type KisekiGpuVisibilityInfo,
+  type KisekiMaterialGalleryInfo,
   type KisekiVoxelEditResult,
 } from '../debug/installKisekiDebugSurface.ts'
 import type { GpuChunkMeshCache } from '../gpu/GpuChunkMeshCache.ts'
@@ -51,11 +52,13 @@ type InstallDebugWorldSurfaceOptions = {
   getGpuVisibilityInfo: () => Promise<KisekiGpuVisibilityInfo>
   getGpuVoxelCache: () => GpuChunkVoxelCache | null
   getHdrEnvironmentName: () => string | null
+  getMaterialGalleryInfo: () => KisekiMaterialGalleryInfo
   getProfileReport: () => ProfileReport | null
   getProfileState: () => ProfileSessionState
   getScene: () => THREE.Scene
   placeTargetBlock: () => Promise<KisekiVoxelEditResult>
   setCameraPosition: (x: number, y: number, z: number) => void
+  setMaterialGalleryVisible: (isVisible: boolean) => boolean
   startProfileSession: () => void
   stopProfileSession: () => Promise<ProfileReport | null>
   syncWorld: () => void
@@ -145,6 +148,7 @@ export function installDebugWorldSurface(
       lastErrorMessage: options.getGpuTerrainErrorMessage(),
     }),
     getGpuVisibilityInfo: options.getGpuVisibilityInfo,
+    getMaterialGalleryInfo: options.getMaterialGalleryInfo,
     getMeshInfo: () => {
       const firstMesh = options.chunkMeshes()[0]
 
@@ -195,6 +199,7 @@ export function installDebugWorldSurface(
       return Array.from(await readGpuVoxelChunkMaterials(gpuDevice, handle))
     },
     setCameraPosition: options.setCameraPosition,
+    setMaterialGalleryVisible: options.setMaterialGalleryVisible,
     startProfileSession: options.startProfileSession,
     stopProfileSession: options.stopProfileSession,
     syncWorld: options.syncWorld,

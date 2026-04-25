@@ -2,12 +2,14 @@ import * as THREE from 'three/webgpu'
 import {
   attribute,
   float,
+  Fn,
   select,
   storage,
   texture as textureNode,
   transformNormalToView,
   uniform,
   uint,
+  varyingProperty,
   vec2,
   vec3,
 } from 'three/tsl'
@@ -88,7 +90,7 @@ export function createVoxelChunkMaterial(
   const materialLayer = packedVertex
     .shiftRight(uint(MATERIAL_SHIFT))
     .bitAnd(uint(MATERIAL_MASK))
-    .toFloat()
+  const surfaceUvVarying = varyingProperty('vec2', 'vVoxelSurfaceUv')
   const isPx = normalDirection.equal(uint(0))
   const isNx = normalDirection.equal(uint(1))
   const isPy = normalDirection.equal(uint(2))
@@ -115,6 +117,7 @@ export function createVoxelChunkMaterial(
       )
     )
   )
+  const wrappedSurfaceUv = surfaceUvVarying.fract()
   const localNormal = select(
     isPx,
     vec3(1, 0, 0),
@@ -149,19 +152,19 @@ export function createVoxelChunkMaterial(
 
   const basecolorSample = textureNode(atlas.basecolor)
     .depth(materialLayer)
-    .sample(surfaceUv)
+    .sample(wrappedSurfaceUv)
   const normalSample = textureNode(atlas.normal)
     .depth(materialLayer)
-    .sample(surfaceUv)
+    .sample(wrappedSurfaceUv)
   const roughnessSample = textureNode(atlas.roughness)
     .depth(materialLayer)
-    .sample(surfaceUv)
+    .sample(wrappedSurfaceUv)
   const metalnessSample = textureNode(atlas.metalness)
     .depth(materialLayer)
-    .sample(surfaceUv)
+    .sample(wrappedSurfaceUv)
   const heightSample = textureNode(atlas.height)
     .depth(materialLayer)
-    .sample(surfaceUv)
+    .sample(wrappedSurfaceUv)
 
   const tangentSpaceNormal = normalSample.rgb.mul(2).sub(1)
   const localSurfaceNormal = tangent
@@ -195,7 +198,11 @@ export function createVoxelChunkMaterial(
       ? localPosition
       : select(isChunkVisible, localPosition, vec3(0, -1000000, 0))
 
-  material.positionNode = localCulledPosition
+  material.positionNode = Fn(() => {
+    surfaceUvVarying.assign(surfaceUv)
+
+    return localCulledPosition
+  })()
   material.colorNode = basecolorSample.rgb.mul(heightOcclusion)
   material.normalNode = transformNormalToView(localSurfaceNormal).normalize()
   material.roughnessNode = roughnessSample.r
