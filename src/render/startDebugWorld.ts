@@ -11,6 +11,7 @@ import { GpuChunkMeshSlab } from '../gpu/GpuChunkMeshSlab.ts'
 import { GpuTerrainGenerator } from '../gpu/GpuTerrainGenerator.ts'
 import { GpuChunkVoxelCache } from '../gpu/GpuChunkVoxelCache.ts'
 import { GpuVoxelSlab } from '../gpu/GpuVoxelSlab.ts'
+import { getGpuAllocationSnapshot } from '../gpu/getGpuAllocationSnapshot.ts'
 import { getWebGpuDevice } from '../gpu/GpuVoxelBuffer.ts'
 import {
   GpuChunkMesher,
@@ -353,6 +354,8 @@ export async function startDebugWorld(
       visibleChunkCount: countVisibleChunkMeshes(camera, chunkMeshes),
     }
   }
+  const captureGpuAllocationSnapshot = () =>
+    getGpuAllocationSnapshot(gpuChunkMeshSlab, gpuVoxelSlab)
 
   const applyProfileHud = (): void => {
     const profileState = profileRecorder.getSessionState(performance.now())
@@ -374,9 +377,9 @@ export async function startDebugWorld(
 
     if (profileState.isRecording) {
       profileReportValue.textContent = [
-        'Recording checkpoint 3...',
+        'Recording checkpoint 4...',
         `Elapsed: ${profileState.elapsedSeconds.toFixed(1)} s`,
-        'Fly around, stream some chunks, try break/place, then stop to save the checkpoint.',
+        'Fly around, stream some chunks, try break/place, then stop to verify the pooled GPU buffers stayed stable.',
       ].join('\n')
       return
     }
@@ -389,7 +392,7 @@ export async function startDebugWorld(
     }
 
     profileReportValue.textContent =
-      'Press Start Profile Run, fly around for a bit, try block edits, then stop to capture a fresh checkpoint-3 report.'
+      'Press Start Profile Run, fly around for a bit, try block edits, then stop to capture a fresh checkpoint-4 report.'
   }
 
   const applyStatsToHud = (): void => {
@@ -501,29 +504,20 @@ export async function startDebugWorld(
 
   const handleKeyDown = onKeyChange(true)
   const handleKeyUp = onKeyChange(false)
-  const handleLock = (): void => {
-    updatePointerState()
-  }
-  const handleUnlock = (): void => {
-    updatePointerState()
-  }
+  const handleLock = (): void => updatePointerState()
+  const handleUnlock = (): void => updatePointerState()
   const handleLockButtonClick = (): void => {
-    if (!controls.isLocked) {
-      controls.lock(true)
-    }
+    if (!controls.isLocked) controls.lock(true)
   }
-  const handleProfileButtonPress = (): void => {
-    void handleProfileButtonClick()
-  }
-  const handleCopyProfileButtonPress = (): void => {
+  const handleProfileButtonPress = (): void => void handleProfileButtonClick()
+  const handleCopyProfileButtonPress = (): void =>
     void handleCopyProfileButtonClick()
-  }
   const handleProfileButtonClick = async (): Promise<void> => {
     if (profileRecorder.isRecording()) {
       profileButton.disabled = true
       try {
         await flushGpuTimestamp()
-        profileRecorder.stop(performance.now())
+        profileRecorder.stop(performance.now(), captureGpuAllocationSnapshot())
       } finally {
         profileButton.disabled = false
         applyStatsToHud()
@@ -531,7 +525,7 @@ export async function startDebugWorld(
       return
     }
 
-    profileRecorder.start(performance.now())
+    profileRecorder.start(performance.now(), captureGpuAllocationSnapshot())
     applyStatsToHud()
   }
   const handleCopyProfileButtonClick = async (): Promise<void> => {
@@ -645,6 +639,7 @@ export async function startDebugWorld(
         terrainGenerator.createChunk(coords)
       ),
     getGpuChunkMeshCache: () => gpuChunkMeshCache,
+    getGpuAllocationInfo: () => captureGpuAllocationSnapshot(),
     getGpuDevice: () => gpuDevice,
     getGpuMeshCompactionInfo: () =>
       gpuChunkMeshSlab?.getCompactionInfo() ?? null,
@@ -664,12 +659,15 @@ export async function startDebugWorld(
       syncStreamedWorld(currentCameraPosition)
     },
     startProfileSession: (): void => {
-      profileRecorder.start(performance.now())
+      profileRecorder.start(performance.now(), captureGpuAllocationSnapshot())
       applyStatsToHud()
     },
     stopProfileSession: async () => {
       await flushGpuTimestamp()
-      const report = profileRecorder.stop(performance.now())
+      const report = profileRecorder.stop(
+        performance.now(),
+        captureGpuAllocationSnapshot()
+      )
       applyStatsToHud()
       return report
     },

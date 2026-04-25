@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu'
 
 import type { GpuPipelineInfo } from './buildGpuPipelineInfo.ts'
+import type { GpuAllocationSnapshot } from '../gpu/buildGpuAllocationSnapshot.ts'
 import type { ChunkMeshComparison } from '../mesh/compareChunkMeshes.ts'
 import type { GpuMeshCompactionInfo } from '../gpu/GpuChunkMeshSlab.ts'
 import type {
@@ -96,6 +97,7 @@ export type KisekiGpuMeshInfo = {
 } | null
 
 export type KisekiGpuMeshCompactionInfo = GpuMeshCompactionInfo | null
+export type KisekiGpuAllocationInfo = GpuAllocationSnapshot | null
 
 export type KisekiGpuPipelineInfo = GpuPipelineInfo | null
 
@@ -119,6 +121,7 @@ export type KisekiDebugSurface = {
     y: number,
     z: number
   ) => Promise<VoxelMaterialComparison | null>
+  getGpuAllocationInfo: () => KisekiGpuAllocationInfo
   getGpuChunkInfo: (x: number, y: number, z: number) => KisekiGpuChunkInfo
   getGpuMeshCompactionInfo: () => KisekiGpuMeshCompactionInfo
   getGpuMeshInfo: (x: number, y: number, z: number) => KisekiGpuMeshInfo

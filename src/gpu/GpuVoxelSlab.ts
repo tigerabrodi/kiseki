@@ -1,6 +1,7 @@
 import { chunkKey, type ChunkCoordinates } from '../world/World.ts'
 import { CHUNK_VOLUME } from '../voxel/chunk.ts'
 import type { GpuVoxelBufferHandle } from './GpuChunkVoxelCache.ts'
+import type { GpuPoolRuntimeStats } from './buildGpuAllocationSnapshot.ts'
 import { FixedSlotAllocator } from './FixedSlotAllocator.ts'
 import { getGpuBufferUsage } from './webGpuStatics.ts'
 import { GPU_VOXEL_BUFFER_BYTE_LENGTH } from './voxelStorageCodec.ts'
@@ -10,10 +11,13 @@ const ZERO_VOXEL_WORDS = new Uint32Array(
 )
 
 export class GpuVoxelSlab {
+  private allocationCount = 0
   private readonly allocator: FixedSlotAllocator
   private readonly buffer: GPUBuffer
   private readonly capacityValue: number
   private readonly device: GPUDevice
+  private highWaterCount = 0
+  private releaseCount = 0
 
   constructor(device: GPUDevice, capacity: number) {
     this.device = device
@@ -43,6 +47,9 @@ export class GpuVoxelSlab {
     const slotIndex = this.allocator.allocate()
     const byteOffset = slotIndex * GPU_VOXEL_BUFFER_BYTE_LENGTH
 
+    this.allocationCount += 1
+    this.highWaterCount = Math.max(this.highWaterCount, this.activeCount())
+
     this.device.queue.writeBuffer(this.buffer, byteOffset, ZERO_VOXEL_WORDS)
 
     return {
@@ -64,6 +71,20 @@ export class GpuVoxelSlab {
     this.buffer.destroy()
   }
 
+  getRuntimeStats(): GpuPoolRuntimeStats {
+    return {
+      activeByteLength: this.activeByteLength(),
+      activeCount: this.activeCount(),
+      allocationCount: this.allocationCount,
+      availableCount: this.allocator.availableCount(),
+      bufferCount: 1,
+      capacity: this.capacity(),
+      highWaterCount: this.highWaterCount,
+      releaseCount: this.releaseCount,
+      reservedByteLength: this.reservedByteLength(),
+    }
+  }
+
   release(handle: GpuVoxelBufferHandle): void {
     if (handle.isSlabAllocated !== true) {
       throw new Error(
@@ -71,6 +92,7 @@ export class GpuVoxelSlab {
       )
     }
 
+    this.releaseCount += 1
     this.allocator.free(handle.slotIndex)
   }
 

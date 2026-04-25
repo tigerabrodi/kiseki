@@ -1,12 +1,61 @@
 import { describe, expect, it } from 'vitest'
 
+import { buildGpuAllocationSnapshot } from '../gpu/buildGpuAllocationSnapshot.ts'
 import { ProfileRecorder, formatProfileReport } from './ProfileRecorder.ts'
 
 describe('ProfileRecorder', () => {
   it('aggregates frame and mesh session metrics into a checkpoint report', () => {
     const recorder = new ProfileRecorder()
+    const startAllocation = buildGpuAllocationSnapshot({
+      mesh: {
+        activeByteLength: 4096,
+        activeCount: 12,
+        allocationCount: 24,
+        availableCount: 88,
+        bufferCount: 6,
+        capacity: 100,
+        highWaterCount: 12,
+        releaseCount: 12,
+        reservedByteLength: 65536,
+      },
+      voxel: {
+        activeByteLength: 2048,
+        activeCount: 12,
+        allocationCount: 24,
+        availableCount: 88,
+        bufferCount: 1,
+        capacity: 100,
+        highWaterCount: 12,
+        releaseCount: 12,
+        reservedByteLength: 32768,
+      },
+    })
+    const endAllocation = buildGpuAllocationSnapshot({
+      mesh: {
+        activeByteLength: 6144,
+        activeCount: 16,
+        allocationCount: 30,
+        availableCount: 84,
+        bufferCount: 6,
+        capacity: 100,
+        highWaterCount: 16,
+        releaseCount: 14,
+        reservedByteLength: 65536,
+      },
+      voxel: {
+        activeByteLength: 3072,
+        activeCount: 16,
+        allocationCount: 30,
+        availableCount: 84,
+        bufferCount: 1,
+        capacity: 100,
+        highWaterCount: 16,
+        releaseCount: 14,
+        reservedByteLength: 32768,
+      },
+    })
 
-    recorder.start(1000)
+    recorder.start(1000, startAllocation)
     recorder.recordFrame({
       chunkCount: 27,
       cpuTimeMs: 2,
@@ -30,7 +79,7 @@ describe('ProfileRecorder', () => {
     })
     recorder.recordGpuTime(2.5)
 
-    const report = recorder.stop(3000)
+    const report = recorder.stop(3000, endAllocation)
 
     expect(report).not.toBeNull()
     expect(report).toMatchObject({
@@ -65,6 +114,19 @@ describe('ProfileRecorder', () => {
         max: 2.5,
         min: 1.5,
         samples: 2,
+      },
+      allocation: {
+        isGpuPoolStable: true,
+        totalBufferCount: {
+          delta: 0,
+          end: 7,
+          start: 7,
+        },
+        totalReservedByteLength: {
+          delta: 0,
+          end: 98304,
+          start: 98304,
+        },
       },
       meshGenerationTimeMs: {
         average: 8,
@@ -149,8 +211,32 @@ describe('ProfileRecorder', () => {
 
   it('formats a readable checkpoint report', () => {
     const recorder = new ProfileRecorder()
+    const allocation = buildGpuAllocationSnapshot({
+      mesh: {
+        activeByteLength: 4096,
+        activeCount: 27,
+        allocationCount: 40,
+        availableCount: 60,
+        bufferCount: 6,
+        capacity: 100,
+        highWaterCount: 32,
+        releaseCount: 13,
+        reservedByteLength: 1024 * 1024 * 32,
+      },
+      voxel: {
+        activeByteLength: 2048,
+        activeCount: 27,
+        allocationCount: 40,
+        availableCount: 60,
+        bufferCount: 1,
+        capacity: 100,
+        highWaterCount: 32,
+        releaseCount: 13,
+        reservedByteLength: 1024 * 1024 * 16,
+      },
+    })
 
-    recorder.start(0)
+    recorder.start(0, allocation)
     recorder.recordFrame({
       chunkCount: 27,
       cpuTimeMs: 3,
@@ -162,11 +248,11 @@ describe('ProfileRecorder', () => {
     })
     recorder.recordGpuTime(1.2)
 
-    const report = recorder.stop(1000)
+    const report = recorder.stop(1000, allocation)
 
     expect(report).not.toBeNull()
     expect(formatProfileReport(report!)).toContain(
-      'Kiseki Profile Checkpoint 3'
+      'Kiseki Profile Checkpoint 4'
     )
     expect(formatProfileReport(report!)).toContain('FPS avg/min/max')
     expect(formatProfileReport(report!)).toContain('CPU @60Hz budget avg/max')
@@ -174,6 +260,12 @@ describe('ProfileRecorder', () => {
       'Terrain ms/chunk avg/min/max'
     )
     expect(formatProfileReport(report!)).toContain('Mesh ms/chunk avg/min/max')
+    expect(formatProfileReport(report!)).toContain(
+      'GPU pool stable after startup: Yes'
+    )
+    expect(formatProfileReport(report!)).toContain(
+      'GPU buffers start/end/delta'
+    )
     expect(formatProfileReport(report!)).toContain('GPU memory avg/max')
   })
 })

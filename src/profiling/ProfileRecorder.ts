@@ -1,3 +1,5 @@
+import type { GpuAllocationSnapshot } from '../gpu/buildGpuAllocationSnapshot.ts'
+
 export type ProfileFrameSample = {
   chunkCount: number
   cpuTimeMs: number
@@ -13,6 +15,28 @@ export type ProfileMetricSummary = {
   max: number
   min: number
   samples: number
+}
+
+export type ProfileMetricDelta = {
+  delta: number
+  end: number
+  start: number
+}
+
+export type ProfileAllocationPoolSummary = {
+  bufferCount: ProfileMetricDelta
+  highWaterCount: number
+  reservedByteLength: ProfileMetricDelta
+  slotAllocationCount: number
+  slotReleaseCount: number
+}
+
+export type ProfileAllocationSummary = {
+  isGpuPoolStable: boolean
+  mesh: ProfileAllocationPoolSummary | null
+  totalBufferCount: ProfileMetricDelta
+  totalReservedByteLength: ProfileMetricDelta
+  voxel: ProfileAllocationPoolSummary | null
 }
 
 export type ProfileMemorySummary = {
@@ -31,6 +55,7 @@ export type ProfileReport = {
   fps: ProfileMetricSummary
   frameCount: number
   gpuTimeMs: ProfileMetricSummary | null
+  allocation: ProfileAllocationSummary | null
   memory: ProfileMemorySummary
   meshGenerationChunkCount: ProfileMetricSummary
   meshGenerationPerChunkMs: ProfileMetricSummary
@@ -49,19 +74,36 @@ export type ProfileSessionState = {
 
 class MetricAccumulator {
   private count = 0
+  private firstValueSeen: number | null = null
+  private lastValueSeen: number | null = null
   private max = Number.NEGATIVE_INFINITY
   private min = Number.POSITIVE_INFINITY
   private total = 0
 
   add(value: number): void {
+    if (this.count === 0) {
+      this.firstValueSeen = value
+    }
+
     this.count += 1
+    this.lastValueSeen = value
     this.total += value
     this.min = Math.min(this.min, value)
     this.max = Math.max(this.max, value)
   }
 
+  firstValue(): number {
+    return this.firstValueSeen ?? 0
+  }
+
+  lastValue(): number {
+    return this.lastValueSeen ?? 0
+  }
+
   reset(): void {
     this.count = 0
+    this.firstValueSeen = null
+    this.lastValueSeen = null
     this.max = Number.NEGATIVE_INFINITY
     this.min = Number.POSITIVE_INFINITY
     this.total = 0
@@ -90,9 +132,70 @@ class MetricAccumulator {
   }
 }
 
+function createMetricDelta(start: number, end: number): ProfileMetricDelta {
+  return {
+    delta: end - start,
+    end,
+    start,
+  }
+}
+
+function buildAllocationPoolSummary(
+  start: GpuAllocationSnapshot['mesh'],
+  end: GpuAllocationSnapshot['mesh']
+): ProfileAllocationPoolSummary | null {
+  if (start === null || end === null) {
+    return null
+  }
+
+  return {
+    bufferCount: createMetricDelta(start.bufferCount, end.bufferCount),
+    highWaterCount: end.highWaterCount,
+    reservedByteLength: createMetricDelta(
+      start.reservedByteLength,
+      end.reservedByteLength
+    ),
+    slotAllocationCount: end.allocationCount - start.allocationCount,
+    slotReleaseCount: end.releaseCount - start.releaseCount,
+  }
+}
+
+function buildAllocationSummary(
+  start: GpuAllocationSnapshot | null,
+  end: GpuAllocationSnapshot | null
+): ProfileAllocationSummary | null {
+  if (start === null || end === null) {
+    return null
+  }
+
+  const totalBufferCount = createMetricDelta(
+    start.totalBufferCount,
+    end.totalBufferCount
+  )
+  const totalReservedByteLength = createMetricDelta(
+    start.totalReservedByteLength,
+    end.totalReservedByteLength
+  )
+
+  return {
+    isGpuPoolStable:
+      totalBufferCount.delta === 0 && totalReservedByteLength.delta === 0,
+    mesh: buildAllocationPoolSummary(start.mesh, end.mesh),
+    totalBufferCount,
+    totalReservedByteLength,
+    voxel: buildAllocationPoolSummary(start.voxel, end.voxel),
+  }
+}
+
 export function formatProfileReport(report: ProfileReport): string {
+  let gpuPoolStabilityLabel = 'Unavailable'
+
+  if (report.allocation !== null) {
+    gpuPoolStabilityLabel = report.allocation.isGpuPoolStable ? 'Yes' : 'No'
+  }
+
   const lines = [
-    'Kiseki Profile Checkpoint 3',
+    'Kiseki Profile Checkpoint 4',
     `Duration: ${report.durationSeconds.toFixed(1)} s`,
     `Frames: ${report.frameCount}`,
     `FPS avg/min/max: ${formatMetric(report.fps)}`,
@@ -112,6 +215,27 @@ export function formatProfileReport(report: ProfileReport): string {
     `Mesh ms avg/max/total: ${report.meshGenerationTimeMs.average.toFixed(2)} / ${report.meshGenerationTimeMs.max.toFixed(2)} / ${report.meshGenerationTimeMs.total.toFixed(2)}`,
     `Mesh ms/chunk avg/min/max: ${formatMetric(report.meshGenerationPerChunkMs)}`,
     `GPU memory avg/max: ${formatBytes(report.memory.gpuBytes.average)} / ${formatBytes(report.memory.gpuBytes.max)}`,
+    `GPU pool stable after startup: ${gpuPoolStabilityLabel}`,
+    `GPU buffers start/end/delta: ${
+      report.allocation === null
+        ? 'Unavailable'
+        : formatCountDelta(report.allocation.totalBufferCount)
+    }`,
+    `GPU reserved start/end/delta: ${
+      report.allocation === null
+        ? 'Unavailable'
+        : formatByteDelta(report.allocation.totalReservedByteLength)
+    }`,
+    `Voxel slot ops alloc/free/high-water: ${
+      report.allocation?.voxel === null || report.allocation === null
+        ? 'Unavailable'
+        : `${report.allocation.voxel.slotAllocationCount} / ${report.allocation.voxel.slotReleaseCount} / ${report.allocation.voxel.highWaterCount}`
+    }`,
+    `Mesh slot ops alloc/free/high-water: ${
+      report.allocation?.mesh === null || report.allocation === null
+        ? 'Unavailable'
+        : `${report.allocation.mesh.slotAllocationCount} / ${report.allocation.mesh.slotReleaseCount} / ${report.allocation.mesh.highWaterCount}`
+    }`,
     `JS heap avg/max: ${
       report.memory.jsHeapBytes === null
         ? 'Unavailable'
@@ -148,6 +272,14 @@ function formatMetric(
   )} / ${metric.max.toFixed(fractionDigits)}`
 }
 
+function formatCountDelta(metric: ProfileMetricDelta): string {
+  return `${metric.start} / ${metric.end} / ${formatSignedNumber(metric.delta)}`
+}
+
+function formatByteDelta(metric: ProfileMetricDelta): string {
+  return `${formatBytes(metric.start)} / ${formatBytes(metric.end)} / ${formatSignedBytes(metric.delta)}`
+}
+
 function formatFrameBudgetUsage(metric: ProfileMetricSummary): string {
   const frameBudgetMs = 1000 / 60
 
@@ -155,6 +287,22 @@ function formatFrameBudgetUsage(metric: ProfileMetricSummary): string {
     (metric.max / frameBudgetMs) *
     100
   ).toFixed(1)}%`
+}
+
+function formatSignedBytes(bytes: number): string {
+  if (bytes === 0) {
+    return '0 B'
+  }
+
+  return `${bytes > 0 ? '+' : '-'}${formatBytes(Math.abs(bytes))}`
+}
+
+function formatSignedNumber(value: number): string {
+  if (value === 0) {
+    return '0'
+  }
+
+  return `${value > 0 ? '+' : ''}${value}`
 }
 
 export class ProfileRecorder {
@@ -174,6 +322,7 @@ export class ProfileRecorder {
 
   private isRecordingSession = false
   private lastReportValue: ProfileReport | null = null
+  private sessionStartGpuAllocationSnapshot: GpuAllocationSnapshot | null = null
   private sessionStartMs = 0
 
   getLastReport(): ProfileReport | null {
@@ -244,13 +393,20 @@ export class ProfileRecorder {
     }
   }
 
-  start(nowMs: number): void {
+  start(
+    nowMs: number,
+    gpuAllocationSnapshot: GpuAllocationSnapshot | null = null
+  ): void {
     this.resetSession()
     this.isRecordingSession = true
+    this.sessionStartGpuAllocationSnapshot = gpuAllocationSnapshot
     this.sessionStartMs = nowMs
   }
 
-  stop(nowMs: number): ProfileReport | null {
+  stop(
+    nowMs: number,
+    gpuAllocationSnapshot: GpuAllocationSnapshot | null = null
+  ): ProfileReport | null {
     if (!this.isRecordingSession) {
       return this.lastReportValue
     }
@@ -267,6 +423,10 @@ export class ProfileRecorder {
         this.gpuTimeMs.summary().samples === 0
           ? null
           : this.gpuTimeMs.summary(),
+      allocation: buildAllocationSummary(
+        this.sessionStartGpuAllocationSnapshot,
+        gpuAllocationSnapshot
+      ),
       memory: {
         gpuBytes: this.gpuMemoryBytes.summary(),
         jsHeapBytes:
@@ -308,5 +468,6 @@ export class ProfileRecorder {
     this.terrainGenerationPerChunkMs.reset()
     this.terrainGenerationTimeMs.reset()
     this.triangleCount.reset()
+    this.sessionStartGpuAllocationSnapshot = null
   }
 }

@@ -2,10 +2,10 @@ export function createDebugWorldMarkup(): string {
   return `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Step 26</p>
-        <h1 class="title">Profile Checkpoint 3</h1>
+        <p class="eyebrow">Kiseki / Step 27</p>
+        <h1 class="title">Profile Checkpoint 4</h1>
         <p class="subtitle">
-          The terrain, meshing, and render path are now GPU-driven end to end, and live chunk meshes get compacted into tighter render regions inside the shared slab. Use the crosshair to break or place blocks, then profile the streamed world in motion.
+          The terrain, meshing, and render path are now GPU-driven end to end, and the pooled chunk buffers should stay stable while slots churn underneath. Use this checkpoint to prove stream-time movement no longer creates fresh GPU buffers.
         </p>
         <dl class="stats">
           <div class="stats-card">
@@ -118,7 +118,7 @@ export function createDebugWorldMarkup(): string {
           </button>
         </div>
         <pre class="profile-report" data-profile-report>
-Press Start Profile Run, fly around for a bit, then stop to capture a fresh checkpoint-3 report.
+Press Start Profile Run, fly around for a bit, then stop to capture a fresh checkpoint-4 report.
         </pre>
       </div>
       <div class="viewport" data-viewport></div>

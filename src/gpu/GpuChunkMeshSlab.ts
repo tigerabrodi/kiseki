@@ -24,6 +24,7 @@ import {
   GPU_CHUNK_MESH_MAX_VERTEX_COUNT,
   GPU_CHUNK_MESH_VERTEX_BYTE_LENGTH,
 } from './gpuChunkMeshingShader.ts'
+import type { GpuPoolRuntimeStats } from './buildGpuAllocationSnapshot.ts'
 import { planGpuMeshCompaction } from './planGpuMeshCompaction.ts'
 import { readGpuBufferToUint32Array } from './GpuVoxelBuffer.ts'
 import { getGpuBufferUsage } from './webGpuStatics.ts'
@@ -77,6 +78,7 @@ function createEmptyCompactionInfo(
 }
 
 export class GpuChunkMeshSlab {
+  private allocationCount = 0
   private readonly allocator: FixedSlotAllocator
   private readonly capacityValue: number
   private readonly countsSlotByteLength: number
@@ -94,7 +96,9 @@ export class GpuChunkMeshSlab {
   private readonly stagingIndexByteLength: number
   private readonly stagingVertexBuffer: GPUBuffer
   private readonly stagingVertexByteLength: number
+  private highWaterCount = 0
   private lastCompactionInfo: GpuMeshCompactionInfo
+  private releaseCount = 0
 
   constructor(renderer: WebGPURenderer, capacity: number) {
     const backend = getWebGpuBackend(renderer)
@@ -200,6 +204,9 @@ export class GpuChunkMeshSlab {
     const stagingVertexByteOffset =
       slotIndex * GPU_CHUNK_MESH_VERTEX_BYTE_LENGTH
     const stagingIndexByteOffset = slotIndex * GPU_CHUNK_MESH_INDEX_BYTE_LENGTH
+
+    this.allocationCount += 1
+    this.highWaterCount = Math.max(this.highWaterCount, this.activeCount())
 
     this.device.queue.writeBuffer(
       this.countsBuffer,
@@ -378,6 +385,20 @@ export class GpuChunkMeshSlab {
     return this.lastCompactionInfo
   }
 
+  getRuntimeStats(): GpuPoolRuntimeStats {
+    return {
+      activeByteLength: this.activeByteLength(),
+      activeCount: this.activeCount(),
+      allocationCount: this.allocationCount,
+      availableCount: this.allocator.availableCount(),
+      bufferCount: 6,
+      capacity: this.capacity(),
+      highWaterCount: this.highWaterCount,
+      releaseCount: this.releaseCount,
+      reservedByteLength: this.reservedByteLength(),
+    }
+  }
+
   release(handle: GpuChunkMeshHandle): void {
     if (handle.isSlabAllocated !== true) {
       throw new Error(
@@ -401,6 +422,7 @@ export class GpuChunkMeshSlab {
     handle.vertexByteLength = 0
     handle.indexByteOffset = 0
     handle.indexByteLength = 0
+    this.releaseCount += 1
     this.allocator.free(handle.slotIndex)
   }
 
