@@ -10,6 +10,7 @@ export type GpuPipelineInfo = {
   meshDataLivesOnGpu: boolean
   overrideChunkCount: number
   overrideVoxelCount: number
+  usesGpuFrustumCulling: boolean
   usesGpuMeshGeneration: boolean
   usesGpuMeshRendering: boolean
   usesGpuTerrainGeneration: boolean
@@ -22,6 +23,7 @@ type BuildGpuPipelineInfoInput = {
   gpuVoxelBufferCount: number
   overrideChunkCount: number
   overrideVoxelCount: number
+  usesGpuFrustumCulling: boolean
   usesGpuMeshGeneration: boolean
   usesGpuMeshRendering: boolean
   usesGpuTerrainGeneration: boolean
@@ -78,6 +80,7 @@ export function buildGpuPipelineInfo(
     meshDataLivesOnGpu: hasMeshDataOnGpu,
     overrideChunkCount: input.overrideChunkCount,
     overrideVoxelCount: input.overrideVoxelCount,
+    usesGpuFrustumCulling: input.usesGpuFrustumCulling,
     usesGpuMeshGeneration: input.usesGpuMeshGeneration,
     usesGpuMeshRendering: input.usesGpuMeshRendering,
     usesGpuTerrainGeneration: input.usesGpuTerrainGeneration,

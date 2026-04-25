@@ -6,6 +6,7 @@ import {
   type KisekiDebugStats,
   type KisekiGpuMeshCompactionInfo,
   type KisekiGpuPipelineInfo,
+  type KisekiGpuVisibilityInfo,
   type KisekiVoxelEditResult,
 } from '../debug/installKisekiDebugSurface.ts'
 import type { GpuChunkMeshCache } from '../gpu/GpuChunkMeshCache.ts'
@@ -45,6 +46,7 @@ type InstallDebugWorldSurfaceOptions = {
   getGpuDevice: () => GPUDevice | null
   getGpuMeshCompactionInfo: () => KisekiGpuMeshCompactionInfo
   getGpuTerrainErrorMessage: () => string | null
+  getGpuVisibilityInfo: () => Promise<KisekiGpuVisibilityInfo>
   getGpuVoxelCache: () => GpuChunkVoxelCache | null
   getHdrEnvironmentName: () => string | null
   getProfileReport: () => ProfileReport | null
@@ -139,6 +141,7 @@ export function installDebugWorldSurface(
     getGpuTerrainInfo: () => ({
       lastErrorMessage: options.getGpuTerrainErrorMessage(),
     }),
+    getGpuVisibilityInfo: options.getGpuVisibilityInfo,
     getMeshInfo: () => {
       const firstMesh = options.chunkMeshes()[0]
 
@@ -152,6 +155,7 @@ export function installDebugWorldSurface(
 
       return {
         attributeNames: Object.keys(firstMesh.geometry.attributes),
+        frustumCulled: firstMesh.frustumCulled,
         hasIndirect: firstMesh.geometry.indirect !== null,
         indirectOffset,
         indexCount: firstMesh.geometry.index?.count ?? 0,

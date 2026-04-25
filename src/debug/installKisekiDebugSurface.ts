@@ -4,6 +4,7 @@ import type { GpuPipelineInfo } from './buildGpuPipelineInfo.ts'
 import type { GpuAllocationSnapshot } from '../gpu/buildGpuAllocationSnapshot.ts'
 import type { ChunkMeshComparison } from '../mesh/compareChunkMeshes.ts'
 import type { GpuMeshCompactionInfo } from '../gpu/GpuChunkMeshSlab.ts'
+import type { GpuChunkVisibilityInfo } from '../gpu/GpuChunkVisibilityCuller.ts'
 import type {
   ProfileReport,
   ProfileSessionState,
@@ -42,6 +43,7 @@ export type KisekiDebugStats = {
 
 export type KisekiMeshInfo = {
   attributeNames: Array<string>
+  frustumCulled: boolean
   hasIndirect: boolean
   indirectOffset: number
   indexCount: number
@@ -98,6 +100,7 @@ export type KisekiGpuMeshInfo = {
 
 export type KisekiGpuMeshCompactionInfo = GpuMeshCompactionInfo | null
 export type KisekiGpuAllocationInfo = GpuAllocationSnapshot | null
+export type KisekiGpuVisibilityInfo = GpuChunkVisibilityInfo | null
 
 export type KisekiGpuPipelineInfo = GpuPipelineInfo | null
 
@@ -127,6 +130,7 @@ export type KisekiDebugSurface = {
   getGpuMeshInfo: (x: number, y: number, z: number) => KisekiGpuMeshInfo
   getGpuPipelineInfo: () => KisekiGpuPipelineInfo
   getGpuTerrainInfo: () => KisekiGpuTerrainInfo
+  getGpuVisibilityInfo: () => Promise<KisekiGpuVisibilityInfo>
   getMeshInfo: () => KisekiMeshInfo
   getProfileReport: () => ProfileReport | null
   getProfileState: () => ProfileSessionState

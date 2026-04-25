@@ -2,10 +2,10 @@ export function createDebugWorldMarkup(): string {
   return `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Step 27</p>
-        <h1 class="title">Profile Checkpoint 4</h1>
+        <p class="eyebrow">Kiseki / Step 28</p>
+        <h1 class="title">GPU Frustum Culling</h1>
         <p class="subtitle">
-          The terrain, meshing, and render path are now GPU-driven end to end, and the pooled chunk buffers should stay stable while slots churn underneath. Use this checkpoint to prove stream-time movement no longer creates fresh GPU buffers.
+          Chunk visibility is now decided on the GPU from a frustum bitmask instead of CPU-side mesh tests. Turn fast, fly wide, and use the debug surface to watch the visibility mask react while the render path stays GPU-driven.
         </p>
         <dl class="stats">
           <div class="stats-card">
@@ -118,12 +118,12 @@ export function createDebugWorldMarkup(): string {
           </button>
         </div>
         <pre class="profile-report" data-profile-report>
-Press Start Profile Run, fly around for a bit, then stop to capture a fresh checkpoint-4 report.
+Press Start Profile Run, fly around for a bit, turn the camera hard, then stop to capture a fresh GPU-culling run.
         </pre>
       </div>
       <div class="viewport" data-viewport></div>
       <div class="crosshair" aria-hidden="true"></div>
-      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. Left click breaks, right click places cobblestone. The CPU keeps only empty chunk placeholders plus sparse edit overrides while live voxels and meshes stay on the GPU.</p>
+      <p class="footnote">WASD to strafe, Space and Shift to rise or descend. Left click breaks, right click places cobblestone. The CPU keeps only empty chunk placeholders plus sparse edit overrides while live voxels, meshes, and chunk visibility masking stay on the GPU.</p>
     </main>
   `
 }

@@ -66,7 +66,8 @@ describe('createGpuChunkRenderMesh', () => {
     expect(geometry.getIndex()).toBe(handle.renderBuffers?.indexAttribute)
     expect(geometry.getIndirect()).toBe(handle.renderBuffers?.indirectAttribute)
     expect(geometry.indirectOffset).toBe(handle.indirectByteOffset)
-    expect(mesh.frustumCulled).toBe(true)
+    expect(mesh.frustumCulled).toBe(false)
+    expect(mesh.userData.chunkSlotIndex).toBe(handle.slotIndex)
     expect(geometry.boundingBox?.min.toArray()).toEqual([0, 0, 0])
     expect(geometry.boundingBox?.max.toArray()).toEqual([
       CHUNK_SIZE,

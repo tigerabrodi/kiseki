@@ -2,7 +2,9 @@ import * as THREE from 'three/webgpu'
 
 import type { FlyInputState } from '../camera/getFlyMovementIntent.ts'
 
-type DisposableMesh = THREE.Mesh<
+export type DebugWorldHandle = () => void
+
+export type DisposableMesh = THREE.Mesh<
   THREE.BufferGeometry,
   THREE.Material | Array<THREE.Material>
 >
@@ -81,4 +83,24 @@ export function getJsHeapBytes(): number | null {
 
 export function bytesToMegabytes(bytes: number): number {
   return bytes / (1024 * 1024)
+}
+
+export function getPipelineState(
+  hasGpuFullPipeline: boolean,
+  hasGpuVisibilityCulling: boolean
+): string {
+  if (!hasGpuFullPipeline) {
+    return 'Mixed'
+  }
+
+  return hasGpuVisibilityCulling ? 'GPU Full + Cull' : 'GPU Full'
+}
+
+export function updatePointerHud(
+  isLocked: boolean,
+  lockButton: HTMLButtonElement,
+  pointerStateValue: HTMLElement
+): void {
+  pointerStateValue.textContent = isLocked ? 'Locked' : 'Unlocked'
+  lockButton.textContent = isLocked ? 'Press Esc To Release' : 'Click To Fly'
 }

@@ -3,13 +3,16 @@ import {
   attribute,
   float,
   select,
+  storage,
   texture as textureNode,
   transformNormalToView,
+  uniform,
   uint,
   vec2,
   vec3,
 } from 'three/tsl'
 
+import type { GpuChunkVisibilityMaterialState } from '../gpu/GpuChunkVisibilityCuller.ts'
 import type { VoxelTextureAtlas } from './loadVoxelTextureAtlas.ts'
 
 const COORDINATE_MASK = 0x1f
@@ -23,8 +26,26 @@ const X_OVERFLOW_SHIFT = 26
 const Y_OVERFLOW_SHIFT = 27
 const Z_OVERFLOW_SHIFT = 28
 
+function getChunkSlotIndex(object: THREE.Object3D | null): number {
+  const userData: unknown = object?.userData
+
+  if (
+    typeof userData !== 'object' ||
+    userData === null ||
+    !('chunkSlotIndex' in userData)
+  ) {
+    return 0
+  }
+
+  const chunkSlotIndex = (userData as { chunkSlotIndex?: unknown })
+    .chunkSlotIndex
+
+  return typeof chunkSlotIndex === 'number' ? chunkSlotIndex >>> 0 : 0
+}
+
 export function createVoxelChunkMaterial(
-  atlas: VoxelTextureAtlas
+  atlas: VoxelTextureAtlas,
+  visibilityState?: GpuChunkVisibilityMaterialState
 ): THREE.MeshStandardNodeMaterial {
   const material = new THREE.MeshStandardNodeMaterial()
   const packedVertex = attribute<'uint'>('packedData', 'uint')
@@ -149,8 +170,32 @@ export function createVoxelChunkMaterial(
     .add(localNormal.mul(tangentSpaceNormal.z))
     .normalize()
   const heightOcclusion = heightSample.r.mul(0.2).add(0.8)
+  const chunkSlotIndexNode = uint(
+    uniform(0).onObjectUpdate(({ object }) => getChunkSlotIndex(object))
+  )
+  const visibilityWordNode =
+    visibilityState === undefined
+      ? null
+      : storage(
+          visibilityState.visibilityAttribute,
+          'uint',
+          visibilityState.visibilityWordCount
+        )
+          .toReadOnly()
+          .element(chunkSlotIndexNode.shiftRight(uint(5)))
+  const isChunkVisible =
+    visibilityWordNode === null
+      ? null
+      : visibilityWordNode
+          .shiftRight(chunkSlotIndexNode.bitAnd(uint(31)))
+          .bitAnd(uint(1))
+          .equal(uint(1))
+  const localCulledPosition =
+    isChunkVisible === null
+      ? localPosition
+      : select(isChunkVisible, localPosition, vec3(0, -1000000, 0))
 
-  material.positionNode = localPosition
+  material.positionNode = localCulledPosition
   material.colorNode = basecolorSample.rgb.mul(heightOcclusion)
   material.normalNode = transformNormalToView(localSurfaceNormal).normalize()
   material.roughnessNode = roughnessSample.r

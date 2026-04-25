@@ -34,7 +34,8 @@ export function createGpuChunkRenderMesh(
   )
 
   const mesh = new THREE.Mesh(geometry, material)
-  mesh.frustumCulled = true
+  mesh.frustumCulled = false
+  mesh.userData.chunkSlotIndex = handle.slotIndex
 
   return { mesh }
 }

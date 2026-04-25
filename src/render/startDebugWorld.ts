@@ -10,6 +10,7 @@ import { GpuChunkMeshCache } from '../gpu/GpuChunkMeshCache.ts'
 import { GpuChunkMeshSlab } from '../gpu/GpuChunkMeshSlab.ts'
 import { GpuTerrainGenerator } from '../gpu/GpuTerrainGenerator.ts'
 import { GpuChunkVoxelCache } from '../gpu/GpuChunkVoxelCache.ts'
+import { GpuChunkVisibilityCuller } from '../gpu/GpuChunkVisibilityCuller.ts'
 import { GpuVoxelSlab } from '../gpu/GpuVoxelSlab.ts'
 import { getGpuAllocationSnapshot } from '../gpu/getGpuAllocationSnapshot.ts'
 import { getWebGpuDevice } from '../gpu/GpuVoxelBuffer.ts'
@@ -22,22 +23,27 @@ import {
   type VoxelEditMode,
 } from '../interaction/applyVoxelEdit.ts'
 import {
-  ProfileRecorder,
   formatProfileReport,
+  ProfileRecorder,
 } from '../profiling/ProfileRecorder.ts'
 import { Chunk } from '../voxel/chunk.ts'
+import { applyProfileHud as renderProfileHud } from './applyProfileHud.ts'
 import { createDebugWorldMarkup } from './createDebugWorldMarkup.ts'
+import { createGpuVisibilityTracker } from './createGpuVisibilityTracker.ts'
 import { createVoxelChunkMaterial } from './createVoxelChunkMaterial.ts'
 import {
   bytesToMegabytes,
   createInputState,
+  type DebugWorldHandle,
+  type DisposableMesh,
   disposeMeshGeometries,
   getJsHeapBytes,
+  getPipelineState,
   turnCameraByDegrees,
+  updatePointerHud,
 } from './debugWorldHelpers.ts'
 import { getDebugWorldElements } from './getDebugWorldElements.ts'
 import { installDebugWorldSurface } from './installDebugWorldSurface.ts'
-import { countVisibleChunkMeshes } from './countVisibleChunkMeshes.ts'
 import { createGpuMeshCompactionScheduler } from './createGpuMeshCompactionScheduler.ts'
 import { loadHdrEnvironment } from './loadHdrEnvironment.ts'
 import { loadVoxelTextureAtlas } from './loadVoxelTextureAtlas.ts'
@@ -51,12 +57,6 @@ import {
 import { VoxelOverrideStore } from '../world/VoxelOverrideStore.ts'
 import { chunkKey } from '../world/World.ts'
 import { TerrainGenerator } from '../world/TerrainGenerator.ts'
-
-type DebugWorldHandle = () => void
-type DisposableMesh = THREE.Mesh<
-  THREE.BufferGeometry,
-  THREE.Material | Array<THREE.Material>
->
 
 export async function startDebugWorld(
   root: HTMLElement
@@ -154,6 +154,7 @@ export async function startDebugWorld(
   let gpuChunkMesher: GpuChunkMesher | null = null
   let gpuChunkMeshCache: GpuChunkMeshCache | null = null
   let gpuChunkMeshSlab: GpuChunkMeshSlab | null = null
+  let gpuChunkVisibilityCuller: GpuChunkVisibilityCuller | null = null
   let gpuTerrainGenerator: GpuTerrainGenerator | null = null
   let gpuVoxelCache: GpuChunkVoxelCache | null = null
   let gpuVoxelSlab: GpuVoxelSlab | null = null
@@ -218,6 +219,10 @@ export async function startDebugWorld(
     totalTriangleCount = nextTriangleCount
     applyStatsToHud()
   }
+  const gpuVisibilityTracker = createGpuVisibilityTracker({
+    getCuller: () => gpuChunkVisibilityCuller,
+    onVisibilityInfoChange: () => applyStatsToHud(),
+  })
 
   const gpuMeshCompactionScheduler = createGpuMeshCompactionScheduler({
     getMeshCache: () => gpuChunkMeshCache,
@@ -341,7 +346,10 @@ export async function startDebugWorld(
       gpuTimeMs: lastGpuFrameTimeMs,
       loadedChunkCount,
       meshGenerationTimeMs: lastMeshGenerationTimeMs,
-      pipelineState: hasGpuFullPipeline ? 'GPU Full' : 'Mixed',
+      pipelineState: getPipelineState(
+        hasGpuFullPipeline,
+        gpuChunkVisibilityCuller !== null
+      ),
       playerChunk,
       position: {
         x: currentCameraPosition.x,
@@ -351,48 +359,22 @@ export async function startDebugWorld(
       terrainGenerationTimeMs: lastTerrainGenerationTimeMs,
       triangleCount: totalTriangleCount,
       vertexBytesPerVertex: 4,
-      visibleChunkCount: countVisibleChunkMeshes(camera, chunkMeshes),
+      visibleChunkCount: gpuVisibilityTracker.getInfo()?.visibleChunkCount ?? 0,
     }
   }
   const captureGpuAllocationSnapshot = () =>
     getGpuAllocationSnapshot(gpuChunkMeshSlab, gpuVoxelSlab)
 
-  const applyProfileHud = (): void => {
-    const profileState = profileRecorder.getSessionState(performance.now())
-    let profileLabel = 'Ready'
-
-    if (profileState.isRecording) {
-      profileLabel = `Rec ${profileState.elapsedSeconds.toFixed(1)}s`
-    } else if (profileState.lastReport === null) {
-      profileLabel = 'Idle'
-    }
-
-    profileStateValue.textContent = profileLabel
-
-    profileButton.textContent = profileState.isRecording
-      ? 'Stop & Save Checkpoint'
-      : 'Start Profile Run'
-    copyProfileButton.disabled =
-      profileState.isRecording || profileState.lastReport === null
-
-    if (profileState.isRecording) {
-      profileReportValue.textContent = [
-        'Recording checkpoint 4...',
-        `Elapsed: ${profileState.elapsedSeconds.toFixed(1)} s`,
-        'Fly around, stream some chunks, try break/place, then stop to verify the pooled GPU buffers stayed stable.',
-      ].join('\n')
-      return
-    }
-
-    if (profileState.lastReport !== null) {
-      profileReportValue.textContent = formatProfileReport(
-        profileState.lastReport
-      )
-      return
-    }
-
-    profileReportValue.textContent =
-      'Press Start Profile Run, fly around for a bit, try block edits, then stop to capture a fresh checkpoint-4 report.'
+  const updateProfileHud = (): void => {
+    renderProfileHud(
+      {
+        copyProfileButton,
+        profileButton,
+        profileReportValue,
+        profileStateValue,
+      },
+      profileRecorder.getSessionState(performance.now())
+    )
   }
 
   const applyStatsToHud = (): void => {
@@ -424,15 +406,11 @@ export async function startDebugWorld(
     triangleCountValue.textContent = stats.triangleCount.toString()
     drawCallsValue.textContent = stats.drawCalls.toString()
     editedVoxelsValue.textContent = stats.editedVoxelCount.toString()
-    applyProfileHud()
+    updateProfileHud()
   }
 
-  const updatePointerState = (): void => {
-    pointerStateValue.textContent = controls.isLocked ? 'Locked' : 'Unlocked'
-    lockButton.textContent = controls.isLocked
-      ? 'Press Esc To Release'
-      : 'Click To Fly'
-  }
+  const updatePointerState = (): void =>
+    updatePointerHud(controls.isLocked, lockButton, pointerStateValue)
 
   const resolveGpuTimestampIfNeeded = (): void => {
     if (
@@ -625,6 +603,7 @@ export async function startDebugWorld(
         gpuVoxelBufferCount: gpuVoxelCache?.size() ?? 0,
         overrideChunkCount: voxelOverrideStore.chunkCount(),
         overrideVoxelCount: voxelOverrideStore.voxelCount(),
+        usesGpuFrustumCulling: gpuChunkVisibilityCuller !== null,
         usesGpuMeshGeneration: gpuChunkMesher !== null,
         usesGpuMeshRendering: voxelChunkMaterial !== null,
         usesGpuTerrainGeneration: gpuTerrainGenerator !== null,
@@ -645,6 +624,7 @@ export async function startDebugWorld(
       gpuChunkMeshSlab?.getCompactionInfo() ?? null,
     getGpuTerrainErrorMessage: () =>
       gpuTerrainGenerator?.getLastErrorMessage() ?? null,
+    getGpuVisibilityInfo: () => gpuVisibilityTracker.readInfo(),
     getGpuVoxelCache: () => gpuVoxelCache,
     getHdrEnvironmentName: () => hdrEnvironmentName,
     getProfileReport: () => profileRecorder.getLastReport(),
@@ -657,6 +637,7 @@ export async function startDebugWorld(
       camera.position.copy(currentCameraPosition)
       camera.updateMatrixWorld()
       syncStreamedWorld(currentCameraPosition)
+      gpuVisibilityTracker.cull(camera, true)
     },
     startProfileSession: (): void => {
       profileRecorder.start(performance.now(), captureGpuAllocationSnapshot())
@@ -673,9 +654,11 @@ export async function startDebugWorld(
     },
     syncWorld: (): void => {
       syncStreamedWorld(currentCameraPosition)
+      gpuVisibilityTracker.cull(camera, true)
     },
     turnCamera: (yawDegrees: number, pitchDegrees = 0): void => {
       turnCameraByDegrees(camera, yawDegrees, pitchDegrees)
+      gpuVisibilityTracker.cull(camera, true)
       applyStatsToHud()
     },
   })
@@ -715,15 +698,25 @@ export async function startDebugWorld(
     gpuTerrainGenerator = new GpuTerrainGenerator(gpuDevice, { seed: 'kiseki' })
     gpuChunkMesher = new GpuChunkMesher(gpuDevice)
     gpuChunkMeshSlab = new GpuChunkMeshSlab(renderer, maxRetainedChunkCount)
+    gpuChunkVisibilityCuller = new GpuChunkVisibilityCuller(
+      renderer,
+      maxRetainedChunkCount
+    )
     gpuChunkMeshCache = new GpuChunkMeshCache(
       (entry) => {
         if (gpuChunkMeshSlab === null) {
           throw new Error('GPU chunk mesh slab is not ready')
         }
 
-        return gpuChunkMeshSlab.allocate(entry.coords)
+        const handle = gpuChunkMeshSlab.allocate(entry.coords)
+
+        gpuChunkVisibilityCuller?.registerChunk(handle, entry.coords)
+
+        return handle
       },
       (handle) => {
+        gpuChunkVisibilityCuller?.release(handle)
+
         if (gpuChunkMeshSlab === null) {
           return
         }
@@ -736,7 +729,10 @@ export async function startDebugWorld(
       loadVoxelTextureAtlas(renderer),
       loadHdrEnvironment(renderer),
     ])
-    voxelChunkMaterial = createVoxelChunkMaterial(atlas)
+    voxelChunkMaterial = createVoxelChunkMaterial(
+      atlas,
+      gpuChunkVisibilityCuller?.getMaterialState()
+    )
     scene.background = hdrEnvironment.backgroundTexture
     scene.environment = hdrEnvironment.environmentTexture
     hdrEnvironmentName = hdrEnvironment.environmentName
@@ -771,6 +767,7 @@ export async function startDebugWorld(
     controls.dispose()
     gpuChunkMeshCache?.dispose()
     gpuChunkMeshSlab?.dispose()
+    gpuChunkVisibilityCuller?.destroy()
     gpuChunkMesher?.destroy()
     gpuTerrainGenerator?.destroy()
     gpuVoxelCache?.dispose()
@@ -785,6 +782,7 @@ export async function startDebugWorld(
   }
 
   syncStreamedWorld(initialPosition)
+  gpuVisibilityTracker.cull(camera, true)
 
   void renderer.setAnimationLoop((timestampMilliseconds?: number) => {
     const frameStartMs = performance.now()
@@ -827,6 +825,7 @@ export async function startDebugWorld(
 
     syncStreamedWorld(currentCameraPosition)
     updatePointerState()
+    gpuVisibilityTracker.cull(camera)
 
     void renderer.render(scene, camera)
 
@@ -877,6 +876,7 @@ export async function startDebugWorld(
     disposeMeshGeometries(worldGroup)
     gpuChunkMeshCache?.dispose()
     gpuChunkMeshSlab?.dispose()
+    gpuChunkVisibilityCuller?.destroy()
     gpuChunkMesher?.destroy()
     gpuTerrainGenerator?.destroy()
     gpuVoxelCache?.dispose()
