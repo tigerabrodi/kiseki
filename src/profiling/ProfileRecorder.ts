@@ -44,6 +44,12 @@ export type ProfileMemorySummary = {
   jsHeapBytes: ProfileMetricSummary | null
 }
 
+export type ProfileIndirectDrawSummary = {
+  activeDrawCount: ProfileMetricSummary
+  commandCount: ProfileMetricSummary
+  zeroedCommandCount: ProfileMetricSummary
+}
+
 export type ProfileMeshGenerationSummary = ProfileMetricSummary & {
   total: number
 }
@@ -55,6 +61,7 @@ export type ProfileReport = {
   fps: ProfileMetricSummary
   frameCount: number
   gpuTimeMs: ProfileMetricSummary | null
+  indirectDraw: ProfileIndirectDrawSummary | null
   allocation: ProfileAllocationSummary | null
   memory: ProfileMemorySummary
   meshGenerationChunkCount: ProfileMetricSummary
@@ -195,7 +202,7 @@ export function formatProfileReport(report: ProfileReport): string {
   }
 
   const lines = [
-    'Kiseki Profile Checkpoint 4',
+    'Kiseki Profile Checkpoint 5',
     `Duration: ${report.durationSeconds.toFixed(1)} s`,
     `Frames: ${report.frameCount}`,
     `FPS avg/min/max: ${formatMetric(report.fps)}`,
@@ -205,6 +212,21 @@ export function formatProfileReport(report: ProfileReport): string {
     `CPU @60Hz budget avg/max: ${formatFrameBudgetUsage(report.cpuTimeMs)}`,
     `GPU ms avg/min/max: ${
       report.gpuTimeMs === null ? 'Unavailable' : formatMetric(report.gpuTimeMs)
+    }`,
+    `Indirect draws avg/min/max: ${
+      report.indirectDraw === null
+        ? 'Unavailable'
+        : formatMetric(report.indirectDraw.activeDrawCount, 1)
+    }`,
+    `Indirect zeroed commands avg/min/max: ${
+      report.indirectDraw === null
+        ? 'Unavailable'
+        : formatMetric(report.indirectDraw.zeroedCommandCount, 1)
+    }`,
+    `Indirect command slots avg/min/max: ${
+      report.indirectDraw === null
+        ? 'Unavailable'
+        : formatMetric(report.indirectDraw.commandCount, 1)
     }`,
     `Terrain dispatches: ${report.terrainGenerationTimeMs.samples}`,
     `Terrain chunks avg/min/max: ${formatMetric(report.terrainGenerationChunkCount, 1)}`,
@@ -311,6 +333,9 @@ export class ProfileRecorder {
   private readonly fps = new MetricAccumulator()
   private readonly gpuMemoryBytes = new MetricAccumulator()
   private readonly gpuTimeMs = new MetricAccumulator()
+  private readonly indirectActiveDrawCount = new MetricAccumulator()
+  private readonly indirectCommandCount = new MetricAccumulator()
+  private readonly indirectZeroedCommandCount = new MetricAccumulator()
   private readonly jsHeapBytes = new MetricAccumulator()
   private readonly meshGenerationChunkCount = new MetricAccumulator()
   private readonly meshGenerationPerChunkMs = new MetricAccumulator()
@@ -365,6 +390,21 @@ export class ProfileRecorder {
     }
 
     this.gpuTimeMs.add(durationMs)
+  }
+
+  recordIndirectDrawInfo(sample: {
+    activeDrawCount: number
+    commandCount: number
+  }): void {
+    if (!this.isRecordingSession) {
+      return
+    }
+
+    this.indirectActiveDrawCount.add(sample.activeDrawCount)
+    this.indirectCommandCount.add(sample.commandCount)
+    this.indirectZeroedCommandCount.add(
+      Math.max(0, sample.commandCount - sample.activeDrawCount)
+    )
   }
 
   recordMeshGeneration(durationMs: number, chunkCount: number): void {
@@ -423,6 +463,14 @@ export class ProfileRecorder {
         this.gpuTimeMs.summary().samples === 0
           ? null
           : this.gpuTimeMs.summary(),
+      indirectDraw:
+        this.indirectCommandCount.summary().samples === 0
+          ? null
+          : {
+              activeDrawCount: this.indirectActiveDrawCount.summary(),
+              commandCount: this.indirectCommandCount.summary(),
+              zeroedCommandCount: this.indirectZeroedCommandCount.summary(),
+            },
       allocation: buildAllocationSummary(
         this.sessionStartGpuAllocationSnapshot,
         gpuAllocationSnapshot
@@ -460,6 +508,9 @@ export class ProfileRecorder {
     this.fps.reset()
     this.gpuMemoryBytes.reset()
     this.gpuTimeMs.reset()
+    this.indirectActiveDrawCount.reset()
+    this.indirectCommandCount.reset()
+    this.indirectZeroedCommandCount.reset()
     this.jsHeapBytes.reset()
     this.meshGenerationChunkCount.reset()
     this.meshGenerationPerChunkMs.reset()

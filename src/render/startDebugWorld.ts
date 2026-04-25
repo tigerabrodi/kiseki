@@ -30,6 +30,7 @@ import {
 import { Chunk } from '../voxel/chunk.ts'
 import { applyProfileHud as renderProfileHud } from './applyProfileHud.ts'
 import { createDebugWorldMarkup } from './createDebugWorldMarkup.ts'
+import { createGpuIndirectDrawProfileSampler } from './createGpuIndirectDrawProfileSampler.ts'
 import { createGpuVisibilityTracker } from './createGpuVisibilityTracker.ts'
 import { createVoxelChunkMaterial } from './createVoxelChunkMaterial.ts'
 import {
@@ -166,6 +167,10 @@ export async function startDebugWorld(
   let renderFramesSinceGpuResolve = 0
   let isVoxelEditInFlight = false
   const profileRecorder = new ProfileRecorder()
+  const gpuIndirectDrawProfileSampler = createGpuIndirectDrawProfileSampler({
+    getCuller: () => gpuChunkIndirectDrawCuller,
+    recorder: profileRecorder,
+  })
   const voxelOverrideStore = new VoxelOverrideStore()
 
   const refreshGpuMeshStats = async (): Promise<void> => {
@@ -504,6 +509,7 @@ export async function startDebugWorld(
       profileButton.disabled = true
       try {
         await flushGpuTimestamp()
+        await gpuIndirectDrawProfileSampler.flush()
         profileRecorder.stop(performance.now(), captureGpuAllocationSnapshot())
       } finally {
         profileButton.disabled = false
@@ -630,8 +636,7 @@ export async function startDebugWorld(
     getGpuChunkMeshCache: () => gpuChunkMeshCache,
     getGpuAllocationInfo: () => captureGpuAllocationSnapshot(),
     getGpuDevice: () => gpuDevice,
-    getGpuIndirectDrawInfo: async () =>
-      (await gpuChunkIndirectDrawCuller?.readDrawInfo()) ?? null,
+    getGpuIndirectDrawInfo: () => gpuIndirectDrawProfileSampler.readInfo(),
     getGpuMeshCompactionInfo: () =>
       gpuChunkMeshSlab?.getCompactionInfo() ?? null,
     getGpuTerrainErrorMessage: () =>
@@ -657,6 +662,7 @@ export async function startDebugWorld(
     },
     stopProfileSession: async () => {
       await flushGpuTimestamp()
+      await gpuIndirectDrawProfileSampler.flush()
       const report = profileRecorder.stop(
         performance.now(),
         captureGpuAllocationSnapshot()
@@ -865,6 +871,7 @@ export async function startDebugWorld(
         jsHeapBytes: getJsHeapBytes(),
         triangleCount: totalTriangleCount,
       })
+      gpuIndirectDrawProfileSampler.tick()
     }
 
     renderFramesSinceGpuResolve += 1

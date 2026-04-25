@@ -66,6 +66,10 @@ describe('ProfileRecorder', () => {
       triangleCount: 20000,
     })
     recorder.recordGpuTime(1.5)
+    recorder.recordIndirectDrawInfo({
+      activeDrawCount: 12,
+      commandCount: 100,
+    })
     recorder.recordTerrainGeneration(6, 32)
     recorder.recordMeshGeneration(8, 32)
     recorder.recordFrame({
@@ -78,6 +82,10 @@ describe('ProfileRecorder', () => {
       triangleCount: 26000,
     })
     recorder.recordGpuTime(2.5)
+    recorder.recordIndirectDrawInfo({
+      activeDrawCount: 16,
+      commandCount: 100,
+    })
 
     const report = recorder.stop(3000, endAllocation)
 
@@ -114,6 +122,26 @@ describe('ProfileRecorder', () => {
         max: 2.5,
         min: 1.5,
         samples: 2,
+      },
+      indirectDraw: {
+        activeDrawCount: {
+          average: 14,
+          max: 16,
+          min: 12,
+          samples: 2,
+        },
+        commandCount: {
+          average: 100,
+          max: 100,
+          min: 100,
+          samples: 2,
+        },
+        zeroedCommandCount: {
+          average: 86,
+          max: 88,
+          min: 84,
+          samples: 2,
+        },
       },
       allocation: {
         isGpuPoolStable: true,
@@ -200,6 +228,7 @@ describe('ProfileRecorder', () => {
     const report = recorder.stop(1500)
 
     expect(report?.gpuTimeMs).toBeNull()
+    expect(report?.indirectDraw).toBeNull()
     expect(report?.memory.jsHeapBytes).toBeNull()
     expect(report?.meshGenerationChunkCount.average).toBe(0)
     expect(report?.meshGenerationPerChunkMs.average).toBe(0)
@@ -247,15 +276,26 @@ describe('ProfileRecorder', () => {
       triangleCount: 21634,
     })
     recorder.recordGpuTime(1.2)
+    recorder.recordIndirectDrawInfo({
+      activeDrawCount: 12,
+      commandCount: 100,
+    })
 
     const report = recorder.stop(1000, allocation)
 
     expect(report).not.toBeNull()
     expect(formatProfileReport(report!)).toContain(
-      'Kiseki Profile Checkpoint 4'
+      'Kiseki Profile Checkpoint 5'
     )
     expect(formatProfileReport(report!)).toContain('FPS avg/min/max')
     expect(formatProfileReport(report!)).toContain('CPU @60Hz budget avg/max')
+    expect(formatProfileReport(report!)).toContain('Indirect draws avg/min/max')
+    expect(formatProfileReport(report!)).toContain(
+      'Indirect zeroed commands avg/min/max'
+    )
+    expect(formatProfileReport(report!)).toContain(
+      'Indirect command slots avg/min/max'
+    )
     expect(formatProfileReport(report!)).toContain(
       'Terrain ms/chunk avg/min/max'
     )
