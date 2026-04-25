@@ -38,6 +38,10 @@ export class GpuChunkMeshCache {
     return this.meshes.get(chunkKey(coords))
   }
 
+  handles(): Array<GpuChunkMeshHandle> {
+    return [...this.meshes.values()]
+  }
+
   size(): number {
     return this.meshes.size
   }

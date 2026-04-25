@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu'
 
 import type { GpuPipelineInfo } from './buildGpuPipelineInfo.ts'
 import type { ChunkMeshComparison } from '../mesh/compareChunkMeshes.ts'
+import type { GpuMeshCompactionInfo } from '../gpu/GpuChunkMeshSlab.ts'
 import type {
   ProfileReport,
   ProfileSessionState,
@@ -85,10 +86,16 @@ export type KisekiGpuMeshInfo = {
   maxIndexCount: number
   maxVertexCount: number
   slotIndex: number
+  stagingIndexByteLength: number | null
+  stagingIndexByteOffset: number | null
+  stagingVertexByteLength: number | null
+  stagingVertexByteOffset: number | null
   totalByteLength: number
   vertexByteLength: number
   vertexByteOffset: number
 } | null
+
+export type KisekiGpuMeshCompactionInfo = GpuMeshCompactionInfo | null
 
 export type KisekiGpuPipelineInfo = GpuPipelineInfo | null
 
@@ -113,6 +120,7 @@ export type KisekiDebugSurface = {
     z: number
   ) => Promise<VoxelMaterialComparison | null>
   getGpuChunkInfo: (x: number, y: number, z: number) => KisekiGpuChunkInfo
+  getGpuMeshCompactionInfo: () => KisekiGpuMeshCompactionInfo
   getGpuMeshInfo: (x: number, y: number, z: number) => KisekiGpuMeshInfo
   getGpuPipelineInfo: () => KisekiGpuPipelineInfo
   getGpuTerrainInfo: () => KisekiGpuTerrainInfo

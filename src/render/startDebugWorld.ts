@@ -37,9 +37,11 @@ import {
 import { getDebugWorldElements } from './getDebugWorldElements.ts'
 import { installDebugWorldSurface } from './installDebugWorldSurface.ts'
 import { countVisibleChunkMeshes } from './countVisibleChunkMeshes.ts'
+import { createGpuMeshCompactionScheduler } from './createGpuMeshCompactionScheduler.ts'
 import { loadHdrEnvironment } from './loadHdrEnvironment.ts'
 import { loadVoxelTextureAtlas } from './loadVoxelTextureAtlas.ts'
 import { syncStreamedGpuChunkMeshes } from './syncStreamedGpuChunkMeshes.ts'
+import { syncStreamedGpuVoxelBuffers } from './syncStreamedGpuVoxelBuffers.ts'
 import {
   type ChunkStreamUpdate,
   ChunkStreamer,
@@ -216,6 +218,14 @@ export async function startDebugWorld(
     applyStatsToHud()
   }
 
+  const gpuMeshCompactionScheduler = createGpuMeshCompactionScheduler({
+    getMeshCache: () => gpuChunkMeshCache,
+    getMeshSlab: () => gpuChunkMeshSlab,
+    onAfterCompaction: () => {
+      void refreshGpuMeshStats()
+    },
+  })
+
   const syncGpuChunkMeshes = (
     update: Pick<ChunkStreamUpdate, 'loaded' | 'unloaded'>
   ): void => {
@@ -253,45 +263,28 @@ export async function startDebugWorld(
         result.remeshedChunkCount
       )
     }
-
-    void refreshGpuMeshStats()
-  }
-
-  const syncGpuVoxelBuffers = (
-    update: Pick<ChunkStreamUpdate, 'loaded' | 'unloaded'>
-  ): void => {
-    const terrainGenerationStartMs = performance.now()
-
-    gpuVoxelCache?.sync(update)
-
-    if (gpuTerrainGenerator === null || gpuVoxelCache === null) {
-      return
-    }
-
-    for (const entry of update.loaded) {
-      const voxelHandle = gpuVoxelCache.getBuffer(entry.coords)
-
-      if (voxelHandle !== undefined) {
-        gpuTerrainGenerator.generateChunk(voxelHandle, entry.coords)
-      }
-    }
-
-    lastTerrainGenerationTimeMs = performance.now() - terrainGenerationStartMs
-
-    if (update.loaded.length > 0) {
-      profileRecorder.recordTerrainGeneration(
-        lastTerrainGenerationTimeMs,
-        update.loaded.length
-      )
-    }
   }
 
   const syncStreamedWorld = (position: THREE.Vector3): void => {
     const streamUpdate = chunkStreamer.updateFromWorldPosition(position)
 
     if (streamUpdate.didChange) {
-      syncGpuVoxelBuffers(streamUpdate)
+      const voxelSyncResult = syncStreamedGpuVoxelBuffers({
+        gpuTerrainGenerator,
+        gpuVoxelCache,
+        update: streamUpdate,
+      })
+      lastTerrainGenerationTimeMs = voxelSyncResult.terrainGenerationTimeMs
+
+      if (voxelSyncResult.generatedChunkCount > 0) {
+        profileRecorder.recordTerrainGeneration(
+          lastTerrainGenerationTimeMs,
+          voxelSyncResult.generatedChunkCount
+        )
+      }
+
       syncGpuChunkMeshes(streamUpdate)
+      gpuMeshCompactionScheduler.schedule()
     }
 
     applyStatsToHud()
@@ -590,7 +583,7 @@ export async function startDebugWorld(
       statusValue.textContent = result.message
 
       if (result.didEdit) {
-        void refreshGpuMeshStats()
+        gpuMeshCompactionScheduler.schedule()
       }
 
       return result
@@ -653,6 +646,8 @@ export async function startDebugWorld(
       ),
     getGpuChunkMeshCache: () => gpuChunkMeshCache,
     getGpuDevice: () => gpuDevice,
+    getGpuMeshCompactionInfo: () =>
+      gpuChunkMeshSlab?.getCompactionInfo() ?? null,
     getGpuTerrainErrorMessage: () =>
       gpuTerrainGenerator?.getLastErrorMessage() ?? null,
     getGpuVoxelCache: () => gpuVoxelCache,

@@ -3,6 +3,7 @@ import * as THREE from 'three/webgpu'
 import {
   installKisekiDebugSurface,
   type KisekiDebugStats,
+  type KisekiGpuMeshCompactionInfo,
   type KisekiGpuPipelineInfo,
   type KisekiVoxelEditResult,
 } from '../debug/installKisekiDebugSurface.ts'
@@ -40,6 +41,7 @@ type InstallDebugWorldSurfaceOptions = {
   createReferenceChunk: (coords: ChunkCoordinates) => Chunk
   getGpuChunkMeshCache: () => GpuChunkMeshCache | null
   getGpuDevice: () => GPUDevice | null
+  getGpuMeshCompactionInfo: () => KisekiGpuMeshCompactionInfo
   getGpuTerrainErrorMessage: () => string | null
   getGpuVoxelCache: () => GpuChunkVoxelCache | null
   getHdrEnvironmentName: () => string | null
@@ -124,6 +126,7 @@ export function installDebugWorldSurface(
         { x, y, z },
         options.getGpuVoxelCache()?.getBuffer({ x, y, z })
       ),
+    getGpuMeshCompactionInfo: options.getGpuMeshCompactionInfo,
     getGpuMeshInfo: (x: number, y: number, z: number) =>
       getGpuChunkMeshInfo(
         { x, y, z },

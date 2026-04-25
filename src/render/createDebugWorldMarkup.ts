@@ -2,10 +2,10 @@ export function createDebugWorldMarkup(): string {
   return `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Step 24</p>
+        <p class="eyebrow">Kiseki / Step 26</p>
         <h1 class="title">Profile Checkpoint 3</h1>
         <p class="subtitle">
-          The terrain, meshing, and render path are now GPU-driven end to end. Use the crosshair to break or place blocks, then profile the streamed world in motion.
+          The terrain, meshing, and render path are now GPU-driven end to end, and live chunk meshes get compacted into tighter render regions inside the shared slab. Use the crosshair to break or place blocks, then profile the streamed world in motion.
         </p>
         <dl class="stats">
           <div class="stats-card">

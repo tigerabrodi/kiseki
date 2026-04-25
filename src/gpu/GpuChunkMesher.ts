@@ -32,11 +32,25 @@ const INDEX_COUNT_BYTE_OFFSET = Uint32Array.BYTES_PER_ELEMENT * 2
 export const GPU_CHUNK_MESH_INDIRECT_WORD_COUNT = 5
 export const GPU_CHUNK_MESH_INDIRECT_BYTE_LENGTH =
   GPU_CHUNK_MESH_INDIRECT_WORD_COUNT * Uint32Array.BYTES_PER_ELEMENT
+export function createGpuChunkIndirectDrawArgs(
+  indexCount: number,
+  firstIndex: number,
+  baseVertex: number
+): Uint32Array {
+  return new Uint32Array([
+    indexCount >>> 0,
+    1,
+    firstIndex >>> 0,
+    baseVertex >>> 0,
+    0,
+  ])
+}
+
 export function createGpuChunkIndirectDrawTemplate(
   firstIndex: number,
   baseVertex: number
 ): Uint32Array {
-  return new Uint32Array([0, 1, firstIndex >>> 0, baseVertex >>> 0, 0])
+  return createGpuChunkIndirectDrawArgs(0, firstIndex, baseVertex)
 }
 
 export const GPU_CHUNK_MESH_INDIRECT_DRAW_TEMPLATE =
@@ -69,6 +83,12 @@ export type GpuChunkMeshHandle = {
     packedDataAttribute: THREE.StorageBufferAttribute
   }
   slotIndex: number
+  stagingIndexBuffer?: GPUBuffer
+  stagingIndexByteLength?: number
+  stagingIndexByteOffset?: number
+  stagingVertexBuffer?: GPUBuffer
+  stagingVertexByteLength?: number
+  stagingVertexByteOffset?: number
   vertexBuffer: GPUBuffer
   vertexByteLength: number
   vertexByteOffset: number
@@ -259,6 +279,10 @@ export function getGpuChunkMeshInfo(
   maxIndexCount: number
   maxVertexCount: number
   slotIndex: number
+  stagingIndexByteLength: number | null
+  stagingIndexByteOffset: number | null
+  stagingVertexByteLength: number | null
+  stagingVertexByteOffset: number | null
   totalByteLength: number
   vertexByteLength: number
   vertexByteOffset: number
@@ -283,9 +307,37 @@ export function getGpuChunkMeshInfo(
     maxIndexCount: handle.maxIndexCount,
     maxVertexCount: handle.maxVertexCount,
     slotIndex: handle.slotIndex,
+    stagingIndexByteLength: handle.stagingIndexByteLength ?? null,
+    stagingIndexByteOffset: handle.stagingIndexByteOffset ?? null,
+    stagingVertexByteLength: handle.stagingVertexByteLength ?? null,
+    stagingVertexByteOffset: handle.stagingVertexByteOffset ?? null,
     totalByteLength: getTotalMeshBytes(handle),
     vertexByteLength: handle.vertexByteLength,
     vertexByteOffset: handle.vertexByteOffset,
+  }
+}
+
+function getMeshVertexWriteTarget(handle: GpuChunkMeshHandle): {
+  buffer: GPUBuffer
+  byteLength: number
+  byteOffset: number
+} {
+  return {
+    buffer: handle.stagingVertexBuffer ?? handle.vertexBuffer,
+    byteLength: handle.stagingVertexByteLength ?? handle.vertexByteLength,
+    byteOffset: handle.stagingVertexByteOffset ?? handle.vertexByteOffset,
+  }
+}
+
+function getMeshIndexWriteTarget(handle: GpuChunkMeshHandle): {
+  buffer: GPUBuffer
+  byteLength: number
+  byteOffset: number
+} {
+  return {
+    buffer: handle.stagingIndexBuffer ?? handle.indexBuffer,
+    byteLength: handle.stagingIndexByteLength ?? handle.indexByteLength,
+    byteOffset: handle.stagingIndexByteOffset ?? handle.indexByteOffset,
   }
 }
 
@@ -350,6 +402,8 @@ export class GpuChunkMesher {
     currentVoxelBuffer: GpuVoxelBufferHandle,
     neighbors: GpuVoxelBufferNeighbors
   ): void {
+    const vertexWriteTarget = getMeshVertexWriteTarget(handle)
+    const indexWriteTarget = getMeshIndexWriteTarget(handle)
     const encoder = this.device.createCommandEncoder({
       label: `${handle.label}_encoder`,
     })
@@ -392,17 +446,17 @@ export class GpuChunkMesher {
           {
             binding: 2,
             resource: {
-              buffer: handle.vertexBuffer,
-              offset: handle.vertexByteOffset,
-              size: handle.vertexByteLength,
+              buffer: vertexWriteTarget.buffer,
+              offset: vertexWriteTarget.byteOffset,
+              size: vertexWriteTarget.byteLength,
             },
           },
           {
             binding: 3,
             resource: {
-              buffer: handle.indexBuffer,
-              offset: handle.indexByteOffset,
-              size: handle.indexByteLength,
+              buffer: indexWriteTarget.buffer,
+              offset: indexWriteTarget.byteOffset,
+              size: indexWriteTarget.byteLength,
             },
           },
           {
