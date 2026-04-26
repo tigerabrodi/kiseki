@@ -3,6 +3,10 @@ import type { GpuChunkVoxelCache } from '../gpu/GpuChunkVoxelCache.ts'
 import type { GpuSdfGenerator } from '../gpu/GpuSdfGenerator.ts'
 import type { ChunkStreamUpdate } from '../world/ChunkStreamer.ts'
 import type { ChunkCoordinates } from '../world/World.ts'
+import {
+  regenerateGpuGeneratedChunkBuffers,
+  syncStreamedGpuGeneratedChunkBuffers,
+} from './syncStreamedGpuGeneratedChunkBuffers.ts'
 
 type SyncStreamedGpuSdfBuffersOptions = {
   gpuSdfCache: GpuChunkSdfCache | null
@@ -22,48 +26,26 @@ export function regenerateGpuSdfChunks(options: {
   gpuSdfGenerator: GpuSdfGenerator | null
   gpuVoxelCache: GpuChunkVoxelCache | null
 }): number {
-  const { gpuSdfCache, gpuSdfGenerator, gpuVoxelCache } = options
-  let generatedChunkCount = 0
-
-  if (
-    gpuSdfCache === null ||
-    gpuSdfGenerator === null ||
-    gpuVoxelCache === null
-  ) {
-    return generatedChunkCount
-  }
-
-  for (const coords of options.chunkCoords) {
-    const voxelHandle = gpuVoxelCache.getBuffer(coords)
-    const sdfHandle = gpuSdfCache.getBuffer(coords)
-
-    if (voxelHandle === undefined || sdfHandle === undefined) {
-      continue
-    }
-
-    gpuSdfGenerator.generateChunk(voxelHandle, sdfHandle)
-    generatedChunkCount += 1
-  }
-
-  return generatedChunkCount
+  return regenerateGpuGeneratedChunkBuffers({
+    chunkCoords: options.chunkCoords,
+    gpuGeneratedCache: options.gpuSdfCache,
+    gpuGenerator: options.gpuSdfGenerator,
+    gpuVoxelCache: options.gpuVoxelCache,
+  })
 }
 
 export function syncStreamedGpuSdfBuffers(
   options: SyncStreamedGpuSdfBuffersOptions
 ): SyncStreamedGpuSdfBuffersResult {
-  const sdfGenerationStartMs = performance.now()
-
-  options.gpuSdfCache?.sync(options.update)
-
-  const generatedChunkCount = regenerateGpuSdfChunks({
-    chunkCoords: options.update.loaded.map((entry) => entry.coords),
-    gpuSdfCache: options.gpuSdfCache,
-    gpuSdfGenerator: options.gpuSdfGenerator,
+  const result = syncStreamedGpuGeneratedChunkBuffers({
+    gpuGeneratedCache: options.gpuSdfCache,
+    gpuGenerator: options.gpuSdfGenerator,
     gpuVoxelCache: options.gpuVoxelCache,
+    update: options.update,
   })
 
   return {
-    generatedChunkCount,
-    sdfGenerationTimeMs: performance.now() - sdfGenerationStartMs,
+    generatedChunkCount: result.generatedChunkCount,
+    sdfGenerationTimeMs: result.generationTimeMs,
   }
 }
