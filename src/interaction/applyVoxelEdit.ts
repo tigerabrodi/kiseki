@@ -20,6 +20,7 @@ export type VoxelEditMode = 'break' | 'place'
 export type VoxelEditResult = {
   didEdit: boolean
   message: string
+  touchedChunks: Array<{ x: number; y: number; z: number }>
   touchedChunkCount: number
 }
 
@@ -91,6 +92,7 @@ export async function applyVoxelEdit(
     return {
       didEdit: false,
       message: 'No block in range',
+      touchedChunks: [],
       touchedChunkCount: 0,
     }
   }
@@ -105,6 +107,7 @@ export async function applyVoxelEdit(
     return {
       didEdit: false,
       message: 'Placement space is occupied',
+      touchedChunks: [],
       touchedChunkCount: 0,
     }
   }
@@ -116,6 +119,7 @@ export async function applyVoxelEdit(
     return {
       didEdit: false,
       message: `Chunk ${chunkKey(chunkCoords)} is not loaded`,
+      touchedChunks: [],
       touchedChunkCount: 0,
     }
   }
@@ -129,6 +133,7 @@ export async function applyVoxelEdit(
   options.overrideStore.setVoxel(targetVoxel, targetMaterialId)
 
   let touchedChunkCount = 0
+  const touchedChunks = []
 
   for (const coords of getAffectedChunkCoordsForLocalVoxel(
     chunkCoords,
@@ -147,6 +152,7 @@ export async function applyVoxelEdit(
       )
     ) {
       touchedChunkCount += 1
+      touchedChunks.push(coords)
     }
   }
 
@@ -156,6 +162,7 @@ export async function applyVoxelEdit(
       hit,
       options.mode
     )}`,
+    touchedChunks,
     touchedChunkCount,
   }
 }

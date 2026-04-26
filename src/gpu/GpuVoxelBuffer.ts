@@ -123,6 +123,40 @@ export async function readGpuBufferToUint32Array(
   return new Uint32Array(copy)
 }
 
+export async function readGpuBufferToFloat32Array(
+  device: GPUDevice,
+  buffer: GPUBuffer,
+  byteLength: number,
+  label = 'gpu_buffer',
+  byteOffset = 0
+): Promise<Float32Array> {
+  if (byteLength === 0) {
+    return new Float32Array()
+  }
+
+  const gpuBufferUsage = getGpuBufferUsage()
+  const gpuMapMode = getGpuMapMode()
+  const readbackBuffer = device.createBuffer({
+    label: `${label}_readback`,
+    size: byteLength,
+    usage: gpuBufferUsage.COPY_DST | gpuBufferUsage.MAP_READ,
+  })
+
+  const encoder = device.createCommandEncoder({
+    label: `${label}_readback_encoder`,
+  })
+
+  encoder.copyBufferToBuffer(buffer, byteOffset, readbackBuffer, 0, byteLength)
+  device.queue.submit([encoder.finish()])
+  await readbackBuffer.mapAsync(gpuMapMode.READ, 0, byteLength)
+
+  const copy = readbackBuffer.getMappedRange(0, byteLength).slice(0)
+  readbackBuffer.unmap()
+  readbackBuffer.destroy()
+
+  return new Float32Array(copy)
+}
+
 export async function readGpuVoxelBuffer(
   device: GPUDevice,
   handle: GpuVoxelBufferHandle

@@ -1,0 +1,6 @@
+import { CHUNK_VOLUME } from '../voxel/chunk.ts'
+
+export const GPU_SDF_BYTES_PER_VALUE = Float32Array.BYTES_PER_ELEMENT
+export const GPU_SDF_BUFFER_BYTE_LENGTH = CHUNK_VOLUME * GPU_SDF_BYTES_PER_VALUE
+export const GPU_SDF_MAX_DISTANCE = 8
+export const GPU_SDF_DEFAULT_DISTANCE = GPU_SDF_MAX_DISTANCE

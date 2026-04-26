@@ -7,6 +7,7 @@ import type { GpuMeshCompactionInfo } from '../gpu/GpuChunkMeshSlab.ts'
 import type { GpuChunkOcclusionInfo } from '../gpu/GpuChunkOcclusionCuller.ts'
 import type { GpuChunkVisibilityInfo } from '../gpu/GpuChunkVisibilityCuller.ts'
 import type { GpuIndirectDrawInfo } from '../gpu/GpuChunkIndirectDrawCuller.ts'
+import type { GpuSdfChunkInfo } from '../gpu/GpuSdfGenerator.ts'
 import type {
   ProfileReport,
   ProfileSessionState,
@@ -66,6 +67,8 @@ export type KisekiGpuTerrainInfo = {
   lastErrorMessage: string | null
 } | null
 
+export type KisekiGpuSdfInfo = GpuSdfChunkInfo | null
+
 export type KisekiGpuChunkInfo = {
   byteOffset: number
   byteLength: number
@@ -113,6 +116,7 @@ export type KisekiMaterialGalleryInfo = VoxelMaterialGalleryInfo | null
 export type KisekiVoxelEditResult = {
   didEdit: boolean
   message: string
+  touchedChunks: Array<ChunkCoordinates>
   touchedChunkCount: number
 }
 
@@ -134,6 +138,7 @@ export type KisekiDebugSurface = {
   getGpuChunkInfo: (x: number, y: number, z: number) => KisekiGpuChunkInfo
   getGpuMeshCompactionInfo: () => KisekiGpuMeshCompactionInfo
   getGpuOcclusionInfo: () => Promise<KisekiGpuOcclusionInfo>
+  getGpuSdfInfo: (x: number, y: number, z: number) => Promise<KisekiGpuSdfInfo>
   getGpuMeshInfo: (x: number, y: number, z: number) => KisekiGpuMeshInfo
   getGpuIndirectDrawInfo: () => Promise<KisekiGpuIndirectDrawInfo>
   getGpuPipelineInfo: () => KisekiGpuPipelineInfo

@@ -13,7 +13,9 @@ import {
   type KisekiVoxelEditResult,
 } from '../debug/installKisekiDebugSurface.ts'
 import type { GpuChunkMeshCache } from '../gpu/GpuChunkMeshCache.ts'
+import type { GpuChunkSdfCache } from '../gpu/GpuChunkSdfCache.ts'
 import { getGpuChunkMeshInfo, readGpuChunkMesh } from '../gpu/GpuChunkMesher.ts'
+import type { GpuSdfGenerator } from '../gpu/GpuSdfGenerator.ts'
 import type { GpuChunkVoxelCache } from '../gpu/GpuChunkVoxelCache.ts'
 import {
   getGpuVoxelBufferInfo,
@@ -50,6 +52,8 @@ type InstallDebugWorldSurfaceOptions = {
   getGpuIndirectDrawInfo: () => Promise<KisekiGpuIndirectDrawInfo>
   getGpuMeshCompactionInfo: () => KisekiGpuMeshCompactionInfo
   getGpuOcclusionInfo: () => Promise<KisekiGpuOcclusionInfo>
+  getGpuSdfCache: () => GpuChunkSdfCache | null
+  getGpuSdfGenerator: () => GpuSdfGenerator | null
   getGpuTerrainErrorMessage: () => string | null
   getGpuVisibilityInfo: () => Promise<KisekiGpuVisibilityInfo>
   getGpuVoxelCache: () => GpuChunkVoxelCache | null
@@ -141,6 +145,16 @@ export function installDebugWorldSurface(
     getGpuIndirectDrawInfo: options.getGpuIndirectDrawInfo,
     getGpuMeshCompactionInfo: options.getGpuMeshCompactionInfo,
     getGpuOcclusionInfo: options.getGpuOcclusionInfo,
+    getGpuSdfInfo: async (x: number, y: number, z: number) => {
+      const sdfHandle = options.getGpuSdfCache()?.getBuffer({ x, y, z })
+      const sdfGenerator = options.getGpuSdfGenerator()
+
+      if (sdfHandle === undefined || sdfGenerator === null) {
+        return null
+      }
+
+      return sdfGenerator.readChunkInfo(sdfHandle)
+    },
     getGpuMeshInfo: (x: number, y: number, z: number) =>
       getGpuChunkMeshInfo(
         { x, y, z },

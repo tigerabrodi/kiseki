@@ -1,7 +1,6 @@
 import * as THREE from 'three/webgpu'
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js'
 import WebGPU from 'three/addons/capabilities/WebGPU.js'
-import { getFlyMovementIntent } from '../camera/getFlyMovementIntent.ts'
 import { FixedStepLoop } from '../core/FixedStepLoop.ts'
 import { buildGpuPipelineInfo } from '../debug/buildGpuPipelineInfo.ts'
 import type { KisekiDebugStats } from '../debug/installKisekiDebugSurface.ts'
@@ -11,12 +10,16 @@ import type { GpuChunkIndirectDrawCuller } from '../gpu/GpuChunkIndirectDrawCull
 import type { GpuChunkMeshSlab } from '../gpu/GpuChunkMeshSlab.ts'
 import type { GpuChunkMesher } from '../gpu/GpuChunkMesher.ts'
 import type { GpuChunkOcclusionCuller } from '../gpu/GpuChunkOcclusionCuller.ts'
+import type { GpuChunkSdfCache } from '../gpu/GpuChunkSdfCache.ts'
 import type { GpuChunkVoxelCache } from '../gpu/GpuChunkVoxelCache.ts'
 import type { GpuChunkVisibilityCuller } from '../gpu/GpuChunkVisibilityCuller.ts'
+import type { GpuSdfGenerator } from '../gpu/GpuSdfGenerator.ts'
+import type { GpuSdfSlab } from '../gpu/GpuSdfSlab.ts'
 import type { GpuTerrainGenerator } from '../gpu/GpuTerrainGenerator.ts'
 import type { GpuVoxelSlab } from '../gpu/GpuVoxelSlab.ts'
 import {
   applyVoxelEdit,
+  type VoxelEditResult,
   type VoxelEditMode,
 } from '../interaction/applyVoxelEdit.ts'
 import {
@@ -24,6 +27,7 @@ import {
   ProfileRecorder,
 } from '../profiling/ProfileRecorder.ts'
 import { Chunk } from '../voxel/chunk.ts'
+import { applyDebugStatsHud } from './applyDebugStatsHud.ts'
 import { applyProfileHud as renderProfileHud } from './applyProfileHud.ts'
 import { createDebugWorldMarkup } from './createDebugWorldMarkup.ts'
 import { createDebugWorldGpuRuntime } from './createDebugWorldGpuRuntime.ts'
@@ -34,7 +38,6 @@ import { createGpuOcclusionController } from './createGpuOcclusionController.ts'
 import { createGpuVisibilityTracker } from './createGpuVisibilityTracker.ts'
 import type { VoxelMaterialGallery } from './createVoxelMaterialGallery.ts'
 import {
-  bytesToMegabytes,
   createInputState,
   type DebugWorldHandle,
   disposeChunkMeshPool,
@@ -49,6 +52,10 @@ import { installDebugWorldEventHandlers } from './installDebugWorldEventHandlers
 import { installDebugWorldSurface } from './installDebugWorldSurface.ts'
 import { createGpuMeshCompactionScheduler } from './createGpuMeshCompactionScheduler.ts'
 import { setupInitialCameraPose } from './setupInitialCameraPose.ts'
+import {
+  regenerateGpuSdfChunks,
+  syncStreamedGpuSdfBuffers,
+} from './syncStreamedGpuSdfBuffers.ts'
 import { syncStreamedGpuChunkMeshes } from './syncStreamedGpuChunkMeshes.ts'
 import { syncStreamedGpuVoxelBuffers } from './syncStreamedGpuVoxelBuffers.ts'
 import {
@@ -57,8 +64,8 @@ import {
   worldPositionToChunkCoordinates,
 } from '../world/ChunkStreamer.ts'
 import { VoxelOverrideStore } from '../world/VoxelOverrideStore.ts'
-import { chunkKey } from '../world/World.ts'
 import { TerrainGenerator } from '../world/TerrainGenerator.ts'
+import { advanceDebugWorldCamera } from './advanceDebugWorldCamera.ts'
 
 export async function startDebugWorld(
   root: HTMLElement
@@ -136,7 +143,10 @@ export async function startDebugWorld(
   let gpuChunkMeshCache: GpuChunkMeshCache | null = null
   let gpuChunkMeshSlab: GpuChunkMeshSlab | null = null
   let gpuChunkOcclusionCuller: GpuChunkOcclusionCuller | null = null
+  let gpuChunkSdfCache: GpuChunkSdfCache | null = null
   let gpuChunkVisibilityCuller: GpuChunkVisibilityCuller | null = null
+  let gpuSdfGenerator: GpuSdfGenerator | null = null
+  let gpuSdfSlab: GpuSdfSlab | null = null
   let gpuTerrainGenerator: GpuTerrainGenerator | null = null
   let gpuVoxelCache: GpuChunkVoxelCache | null = null
   let gpuVoxelSlab: GpuVoxelSlab | null = null
@@ -215,6 +225,8 @@ export async function startDebugWorld(
       chunkMeshSlotMap,
       chunkMesher: activeGpuChunkMesher,
       chunkMeshMap,
+      getSdfSlotIndex: (coords) =>
+        gpuChunkSdfCache?.getBuffer(coords)?.slotIndex ?? null,
       gpuVoxelCache: activeGpuVoxelCache,
       material: activeMaterial,
       update,
@@ -251,6 +263,13 @@ export async function startDebugWorld(
           voxelSyncResult.generatedChunkCount
         )
       }
+
+      syncStreamedGpuSdfBuffers({
+        gpuSdfCache: gpuChunkSdfCache,
+        gpuSdfGenerator,
+        gpuVoxelCache,
+        update: streamUpdate,
+      })
 
       syncGpuChunkMeshes(streamUpdate)
       gpuMeshCompactionScheduler.schedule()
@@ -338,34 +357,30 @@ export async function startDebugWorld(
   }
 
   const applyStatsToHud = (): void => {
-    const stats = buildStatsSnapshot()
-
-    fpsValue.textContent = stats.fps.toFixed(1)
-    cpuTimeValue.textContent = stats.cpuTimeMs.toFixed(2)
-    gpuTimeValue.textContent =
-      stats.gpuTimeMs === null ? 'n/a' : stats.gpuTimeMs.toFixed(2)
-    meshTimeValue.textContent = stats.meshGenerationTimeMs.toFixed(2)
-    terrainTimeValue.textContent = stats.terrainGenerationTimeMs.toFixed(2)
-    gpuVoxelCountValue.textContent = stats.gpuVoxelBufferCount.toString()
-    gpuVoxelMegabytesValue.textContent = bytesToMegabytes(
-      stats.gpuVoxelBufferBytes
-    ).toFixed(2)
-    gpuMeshCountValue.textContent = stats.gpuMeshBufferCount.toString()
-    gpuMeshMegabytesValue.textContent = bytesToMegabytes(
-      stats.gpuMeshBufferBytes
-    ).toFixed(2)
-    vertexBytesValue.textContent = stats.vertexBytesPerVertex.toString()
-    pipelineStateValue.textContent = stats.pipelineState
-    chunkCountValue.textContent = stats.loadedChunkCount.toString()
-    playerChunkValue.textContent = chunkKey(stats.playerChunk)
-    visibleChunksValue.textContent = stats.visibleChunkCount.toString()
-    positionValue.textContent = `${stats.position.x.toFixed(
-      1
-    )}, ${stats.position.y.toFixed(1)}, ${stats.position.z.toFixed(1)}`
-    faceCountValue.textContent = stats.faceCount.toString()
-    triangleCountValue.textContent = stats.triangleCount.toString()
-    drawCallsValue.textContent = stats.drawCalls.toString()
-    editedVoxelsValue.textContent = stats.editedVoxelCount.toString()
+    applyDebugStatsHud(
+      {
+        chunkCountValue,
+        cpuTimeValue,
+        drawCallsValue,
+        editedVoxelsValue,
+        faceCountValue,
+        fpsValue,
+        gpuMeshCountValue,
+        gpuMeshMegabytesValue,
+        gpuTimeValue,
+        gpuVoxelCountValue,
+        gpuVoxelMegabytesValue,
+        meshTimeValue,
+        pipelineStateValue,
+        playerChunkValue,
+        positionValue,
+        terrainTimeValue,
+        triangleCountValue,
+        vertexBytesValue,
+        visibleChunksValue,
+      },
+      buildStatsSnapshot()
+    )
     updateProfileHud()
   }
 
@@ -481,11 +496,7 @@ export async function startDebugWorld(
   const handleVoxelEdit = async (
     mode: VoxelEditMode,
     requirePointerLock = true
-  ): Promise<{
-    didEdit: boolean
-    message: string
-    touchedChunkCount: number
-  }> => {
+  ): Promise<VoxelEditResult> => {
     if (
       (requirePointerLock && !controls.isLocked) ||
       gpuDevice === null ||
@@ -497,6 +508,7 @@ export async function startDebugWorld(
       return {
         didEdit: false,
         message: 'Pointer is unlocked or GPU world is not ready',
+        touchedChunks: [],
         touchedChunkCount: 0,
       }
     }
@@ -518,6 +530,12 @@ export async function startDebugWorld(
       statusValue.textContent = result.message
 
       if (result.didEdit) {
+        regenerateGpuSdfChunks({
+          chunkCoords: result.touchedChunks,
+          gpuSdfCache: gpuChunkSdfCache,
+          gpuSdfGenerator,
+          gpuVoxelCache,
+        })
         gpuOcclusionController.syncGraph()
         gpuVisibilityTracker.cull(camera, true)
         gpuMeshCompactionScheduler.schedule()
@@ -601,6 +619,8 @@ export async function startDebugWorld(
       gpuChunkOcclusionCuller === null
         ? null
         : await gpuChunkOcclusionCuller.readInfo(),
+    getGpuSdfCache: () => gpuChunkSdfCache,
+    getGpuSdfGenerator: () => gpuSdfGenerator,
     getGpuTerrainErrorMessage: () =>
       gpuTerrainGenerator?.getLastErrorMessage() ?? null,
     getGpuVisibilityInfo: () => gpuVisibilityTracker.readInfo(),
@@ -669,9 +689,12 @@ export async function startDebugWorld(
     gpuChunkMeshSlab?.dispose()
     gpuChunkIndirectDrawCuller?.destroy()
     gpuChunkOcclusionCuller?.destroy()
+    gpuChunkSdfCache?.dispose()
     gpuChunkVisibilityCuller?.destroy()
     voxelMaterialGallery?.dispose()
     gpuChunkMesher?.destroy()
+    gpuSdfGenerator?.destroy()
+    gpuSdfSlab?.dispose()
     gpuTerrainGenerator?.destroy()
     gpuVoxelCache?.dispose()
     gpuVoxelSlab?.dispose()
@@ -700,8 +723,11 @@ export async function startDebugWorld(
     gpuChunkMeshSlab = gpuRuntime.gpuChunkMeshSlab
     gpuChunkVisibilityCuller = gpuRuntime.gpuChunkVisibilityCuller
     gpuChunkOcclusionCuller = gpuRuntime.gpuChunkOcclusionCuller
+    gpuChunkSdfCache = gpuRuntime.gpuChunkSdfCache
     gpuChunkIndirectDrawCuller = gpuRuntime.gpuChunkIndirectDrawCuller
     gpuChunkMeshCache = gpuRuntime.gpuChunkMeshCache
+    gpuSdfGenerator = gpuRuntime.gpuSdfGenerator
+    gpuSdfSlab = gpuRuntime.gpuSdfSlab
     voxelChunkMaterial = gpuRuntime.voxelChunkMaterial
     voxelMaterialGallery = gpuRuntime.voxelMaterialGallery
     hdrEnvironmentName = gpuRuntime.hdrEnvironmentName
@@ -737,33 +763,15 @@ export async function startDebugWorld(
       smoothedFps = THREE.MathUtils.lerp(smoothedFps, instantaneousFps, 0.15)
     }
 
-    for (let step = 0; step < frame.steps; step += 1) {
-      camera.position.copy(currentCameraPosition)
-      camera.updateMatrix()
-      previousCameraPosition.copy(currentCameraPosition)
-
-      const movement = getFlyMovementIntent(inputState)
-      controls.moveRight(
-        movement.right * movementSpeed * frame.fixedDeltaSeconds
-      )
-      controls.moveForward(
-        movement.forward * movementSpeed * frame.fixedDeltaSeconds
-      )
-      camera.position.y += movement.up * movementSpeed * frame.fixedDeltaSeconds
-
-      currentCameraPosition.copy(camera.position)
-    }
-
-    if (frame.steps === 0) {
-      previousCameraPosition.copy(currentCameraPosition)
-    }
-
-    camera.position.lerpVectors(
-      previousCameraPosition,
+    advanceDebugWorldCamera({
+      camera,
+      controls,
       currentCameraPosition,
-      frame.alpha
-    )
-    camera.updateMatrixWorld()
+      frame,
+      inputState,
+      movementSpeed,
+      previousCameraPosition,
+    })
 
     syncStreamedWorld(currentCameraPosition)
     updatePointerState()

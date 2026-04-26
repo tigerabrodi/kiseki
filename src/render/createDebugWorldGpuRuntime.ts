@@ -6,11 +6,15 @@ import { GpuChunkMeshCache } from '../gpu/GpuChunkMeshCache.ts'
 import { GpuChunkMesher } from '../gpu/GpuChunkMesher.ts'
 import { GpuChunkMeshSlab } from '../gpu/GpuChunkMeshSlab.ts'
 import { GpuChunkOcclusionCuller } from '../gpu/GpuChunkOcclusionCuller.ts'
+import { GpuChunkSdfCache } from '../gpu/GpuChunkSdfCache.ts'
 import { GpuChunkVisibilityCuller } from '../gpu/GpuChunkVisibilityCuller.ts'
 import { GpuChunkVoxelCache } from '../gpu/GpuChunkVoxelCache.ts'
+import { GpuSdfGenerator } from '../gpu/GpuSdfGenerator.ts'
+import { GpuSdfSlab } from '../gpu/GpuSdfSlab.ts'
 import { GpuTerrainGenerator } from '../gpu/GpuTerrainGenerator.ts'
 import { getWebGpuDevice } from '../gpu/GpuVoxelBuffer.ts'
 import { GpuVoxelSlab } from '../gpu/GpuVoxelSlab.ts'
+import { chunkKey } from '../world/World.ts'
 import { createVoxelChunkMaterial } from './createVoxelChunkMaterial.ts'
 import {
   createVoxelMaterialGallery,
@@ -26,8 +30,11 @@ export type DebugWorldGpuRuntime = {
   gpuChunkMeshCache: GpuChunkMeshCache
   gpuChunkMeshSlab: GpuChunkMeshSlab
   gpuChunkOcclusionCuller: GpuChunkOcclusionCuller
+  gpuChunkSdfCache: GpuChunkSdfCache
   gpuChunkVisibilityCuller: GpuChunkVisibilityCuller
   gpuDevice: GPUDevice
+  gpuSdfGenerator: GpuSdfGenerator
+  gpuSdfSlab: GpuSdfSlab
   gpuTerrainGenerator: GpuTerrainGenerator
   gpuVoxelCache: GpuChunkVoxelCache
   gpuVoxelSlab: GpuVoxelSlab
@@ -57,6 +64,11 @@ export async function createDebugWorldGpuRuntime(
   const gpuTerrainGenerator = new GpuTerrainGenerator(gpuDevice, {
     seed: 'kiseki',
   })
+  const gpuSdfGenerator = new GpuSdfGenerator(gpuDevice)
+  const gpuSdfSlab = new GpuSdfSlab(
+    options.renderer,
+    options.maxRetainedChunkCount
+  )
   const gpuChunkMesher = new GpuChunkMesher(gpuDevice)
   const gpuChunkMeshSlab = new GpuChunkMeshSlab(
     options.renderer,
@@ -91,6 +103,20 @@ export async function createDebugWorldGpuRuntime(
       gpuChunkMeshSlab.release(handle)
     }
   )
+  const gpuChunkSdfCache = new GpuChunkSdfCache(
+    (entry) => {
+      const voxelHandle = gpuVoxelCache.getBuffer(entry.coords)
+
+      if (voxelHandle === undefined) {
+        throw new Error(
+          `Missing GPU voxel buffer for SDF chunk ${chunkKey(entry.coords)}`
+        )
+      }
+
+      return gpuSdfSlab.allocate(entry.coords, voxelHandle.slotIndex)
+    },
+    (handle) => gpuSdfSlab.release(handle)
+  )
   const [atlas, hdrEnvironment] = await Promise.all([
     loadVoxelTextureAtlas(options.renderer),
     loadHdrEnvironment(options.renderer),
@@ -112,8 +138,11 @@ export async function createDebugWorldGpuRuntime(
     gpuChunkMeshCache,
     gpuChunkMeshSlab,
     gpuChunkOcclusionCuller,
+    gpuChunkSdfCache,
     gpuChunkVisibilityCuller,
     gpuDevice,
+    gpuSdfGenerator,
+    gpuSdfSlab,
     gpuTerrainGenerator,
     gpuVoxelCache,
     gpuVoxelSlab,
