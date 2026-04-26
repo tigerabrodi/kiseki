@@ -8,6 +8,7 @@ import type { ChunkStreamUpdate } from '../world/ChunkStreamer.ts'
 import { chunkKey, chunkOrigin, type ChunkCoordinates } from '../world/World.ts'
 import { getChunkCoordsWithCardinalNeighbors } from '../world/worldVoxelCoordinates.ts'
 import { setChunkRenderSlotIndices } from './chunkRenderSlotUserData.ts'
+import { resetObjectChunkReveal } from './chunkReveal.ts'
 import { createGpuChunkRenderMesh } from './createGpuChunkRenderMesh.ts'
 
 type DisposableMesh = THREE.Mesh<
@@ -106,6 +107,7 @@ function addChunkRenderMesh(
     chunkMeshSlotMap.set(chunkHandle.slotIndex, chunkMesh)
   }
 
+  resetObjectChunkReveal(chunkMesh)
   chunkMesh.position.set(origin.x, origin.y, origin.z)
   setChunkRenderSlotIndices(chunkMesh, {
     chunkSlotIndex: chunkHandle.slotIndex,

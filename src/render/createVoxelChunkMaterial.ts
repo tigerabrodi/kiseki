@@ -3,6 +3,7 @@ import {
   attribute,
   float,
   Fn,
+  mix,
   select,
   storage,
   texture as textureNode,
@@ -23,6 +24,7 @@ import {
   getChunkSdfSlotIndex,
   getChunkSlotIndex,
 } from './chunkRenderSlotUserData.ts'
+import { getObjectChunkRevealFactor } from './chunkReveal.ts'
 import type { VoxelTextureAtlas } from './loadVoxelTextureAtlas.ts'
 import {
   SDF_AO_MIN_FACTOR,
@@ -55,6 +57,11 @@ const X_OVERFLOW_SHIFT = 26
 const Y_OVERFLOW_SHIFT = 27
 const Z_OVERFLOW_SHIFT = 28
 const CHUNK_VOLUME = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE
+const CHUNK_REVEAL_FOG_COLOR = {
+  x: 0.36,
+  y: 0.44,
+  z: 0.38,
+} as const
 
 export function createVoxelChunkMaterial(
   atlas: VoxelTextureAtlas,
@@ -212,6 +219,11 @@ export function createVoxelChunkMaterial(
       getObjectVoxelMaterialDebugModeId(object)
     )
   )
+  const chunkRevealFactorNode = float(
+    uniform(1).onObjectUpdate(({ object }) =>
+      getObjectChunkRevealFactor(object)
+    )
+  )
   const isFinalMaterialDebugMode = materialDebugModeNode.equal(
     uint(getVoxelMaterialDebugModeId('final'))
   )
@@ -346,11 +358,25 @@ export function createVoxelChunkMaterial(
     .mul(sdfAmbientOcclusion)
     .mul(sdfSoftShadow)
     .mul(voxelLightFactor)
+  const revealedFinalColor = mix(
+    vec3(
+      CHUNK_REVEAL_FOG_COLOR.x,
+      CHUNK_REVEAL_FOG_COLOR.y,
+      CHUNK_REVEAL_FOG_COLOR.z
+    ),
+    finalColor,
+    chunkRevealFactorNode
+  )
   const finalAmbientOcclusion = heightSample.r
     .mul(0.35)
     .add(float(0.65))
     .mul(sdfAmbientOcclusion)
     .mul(sdfSoftShadow)
+  const revealedAmbientOcclusion = mix(
+    float(1),
+    finalAmbientOcclusion,
+    chunkRevealFactorNode
+  )
   const debugColor = select(
     materialDebugModeNode.equal(uint(getVoxelMaterialDebugModeId('basecolor'))),
     basecolorSample.rgb,
@@ -384,7 +410,11 @@ export function createVoxelChunkMaterial(
       )
     )
   )
-  const materialColor = select(isFinalMaterialDebugMode, finalColor, vec3(0))
+  const materialColor = select(
+    isFinalMaterialDebugMode,
+    revealedFinalColor,
+    vec3(0)
+  )
   const materialEmissive = select(isFinalMaterialDebugMode, vec3(0), debugColor)
 
   material.positionNode = Fn(() => {
@@ -401,7 +431,7 @@ export function createVoxelChunkMaterial(
   material.metalnessNode = metalnessSample.r
   material.aoNode = select(
     isFinalMaterialDebugMode,
-    finalAmbientOcclusion,
+    revealedAmbientOcclusion,
     float(1)
   )
 

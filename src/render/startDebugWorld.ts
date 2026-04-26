@@ -29,9 +29,11 @@ import {
   formatProfileReport,
   ProfileRecorder,
 } from '../profiling/ProfileRecorder.ts'
-import { Chunk } from '../voxel/chunk.ts'
+import type { Chunk } from '../voxel/chunk.ts'
 import { applyDebugStatsHud } from './applyDebugStatsHud.ts'
 import { applyProfileHud as renderProfileHud } from './applyProfileHud.ts'
+import { advanceChunkRevealFactors } from './chunkReveal.ts'
+import { createDebugChunkStreamer } from './createDebugChunkStreamer.ts'
 import { createDebugWorldMarkup } from './createDebugWorldMarkup.ts'
 import { createDebugWorldGpuRuntime } from './createDebugWorldGpuRuntime.ts'
 import { createDebugWorldScene } from './createDebugWorldScene.ts'
@@ -66,7 +68,6 @@ import { syncStreamedGpuChunkMeshes } from './syncStreamedGpuChunkMeshes.ts'
 import { syncStreamedGpuVoxelBuffers } from './syncStreamedGpuVoxelBuffers.ts'
 import {
   type ChunkStreamUpdate,
-  ChunkStreamer,
   worldPositionToChunkCoordinates,
 } from '../world/ChunkStreamer.ts'
 import { VoxelOverrideStore } from '../world/VoxelOverrideStore.ts'
@@ -118,14 +119,9 @@ export async function startDebugWorld(
   }
 
   const { camera, canvas, renderer, scene } = createDebugWorldScene(viewport)
-  const movementSpeed = 8
 
   const terrainGenerator = new TerrainGenerator({ seed: 'kiseki' })
-  const chunkStreamer = new ChunkStreamer({
-    createChunk: () => new Chunk(),
-    loadRadius: { x: 2, y: 1, z: 2 },
-    unloadBuffer: { x: 1, y: 1, z: 1 },
-  })
+  const chunkStreamer = createDebugChunkStreamer()
   const maxRetainedChunkCount = chunkStreamer.getMaxRetainedChunkCount()
   const worldGroup = new THREE.Group()
   scene.add(worldGroup)
@@ -208,6 +204,7 @@ export async function startDebugWorld(
   })
 
   const gpuMeshCompactionScheduler = createGpuMeshCompactionScheduler({
+    delayMs: 600,
     getMeshCache: () => gpuChunkMeshCache,
     getMeshSlab: () => gpuChunkMeshSlab,
     onAfterCompaction: () => {
@@ -834,11 +831,12 @@ export async function startDebugWorld(
       currentCameraPosition,
       frame,
       inputState,
-      movementSpeed,
+      movementSpeed: 8,
       previousCameraPosition,
     })
 
     syncStreamedWorld(currentCameraPosition)
+    advanceChunkRevealFactors(chunkMeshes, frame.frameTimeSeconds)
     updatePointerState()
     gpuVisibilityTracker.cull(camera)
     voxelMaterialGallery?.syncToCamera(camera)

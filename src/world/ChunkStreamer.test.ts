@@ -101,6 +101,43 @@ describe('ChunkStreamer', () => {
     expect(streamer.world.entries()).toHaveLength(90)
   })
 
+  it('can spread chunk loading over multiple updates', () => {
+    const streamer = new ChunkStreamer({
+      createChunk: () => new Chunk(),
+      loadRadius: 1,
+      maxLoadsPerUpdate: 1,
+      unloadBuffer: 1,
+    })
+
+    const initialUpdate = streamer.update({ x: 0, y: 0, z: 0 })
+
+    expect(initialUpdate.loaded.map((entry) => chunkKey(entry.coords))).toEqual(
+      ['0,0,0']
+    )
+    expect(streamer.world.entries()).toHaveLength(1)
+
+    for (let i = 0; i < 26; i += 1) {
+      const update = streamer.update({ x: 0, y: 0, z: 0 })
+
+      expect(update.loaded).toHaveLength(1)
+    }
+
+    expect(streamer.world.entries()).toHaveLength(27)
+    expect(streamer.update({ x: 0, y: 0, z: 0 }).didChange).toBe(false)
+  })
+
+  it('rejects invalid chunk load budgets', () => {
+    expect(
+      () =>
+        new ChunkStreamer({
+          createChunk: () => new Chunk(),
+          loadRadius: 1,
+          maxLoadsPerUpdate: 0,
+          unloadBuffer: 1,
+        })
+    ).toThrow(RangeError)
+  })
+
   it('reports the max retained chunk count implied by load radius and hysteresis', () => {
     const streamer = new ChunkStreamer({
       createChunk: () => new Chunk(),

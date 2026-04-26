@@ -2,6 +2,7 @@ import type { GpuChunkMeshCache } from '../gpu/GpuChunkMeshCache.ts'
 import type { GpuChunkMeshSlab } from '../gpu/GpuChunkMeshSlab.ts'
 
 type CreateGpuMeshCompactionSchedulerOptions = {
+  delayMs?: number
   getMeshCache: () => GpuChunkMeshCache | null
   getMeshSlab: () => GpuChunkMeshSlab | null
   onAfterCompaction: () => void
@@ -14,10 +15,14 @@ export type GpuMeshCompactionScheduler = {
 export function createGpuMeshCompactionScheduler(
   options: CreateGpuMeshCompactionSchedulerOptions
 ): GpuMeshCompactionScheduler {
+  const delayMs = options.delayMs ?? 0
   let isCompactionQueued = false
   let pendingCompaction: Promise<void> | null = null
+  let pendingTimer: ReturnType<typeof setTimeout> | null = null
 
-  const schedule = (): void => {
+  const compact = (): void => {
+    pendingTimer = null
+
     const meshSlab = options.getMeshSlab()
     const meshCache = options.getMeshCache()
 
@@ -46,6 +51,20 @@ export function createGpuMeshCompactionScheduler(
           schedule()
         }
       })
+  }
+
+  const schedule = (): void => {
+    if (pendingTimer !== null) {
+      clearTimeout(pendingTimer)
+      pendingTimer = null
+    }
+
+    if (pendingCompaction !== null) {
+      isCompactionQueued = true
+      return
+    }
+
+    pendingTimer = setTimeout(compact, delayMs)
   }
 
   return { schedule }
