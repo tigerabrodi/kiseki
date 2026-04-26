@@ -10,7 +10,7 @@ type CreateGpuVisibilityTrackerOptions = {
   beforeCull?: () => void
   getCuller: () => GpuChunkVisibilityCuller | null
   onVisibilityInfoChange: () => void
-  refreshEveryFrames?: number
+  refreshEveryFrames?: number | null
 }
 
 export type GpuVisibilityTracker = {
@@ -22,7 +22,7 @@ export type GpuVisibilityTracker = {
 export function createGpuVisibilityTracker(
   options: CreateGpuVisibilityTrackerOptions
 ): GpuVisibilityTracker {
-  const refreshInterval = options.refreshEveryFrames ?? 10
+  const refreshInterval = options.refreshEveryFrames ?? null
   let lastVisibilityInfo: GpuChunkVisibilityInfo | null = null
   let pendingVisibilityResolve: Promise<void> | null = null
   let framesSinceVisibilityResolve = 0
@@ -33,7 +33,9 @@ export function createGpuVisibilityTracker(
     if (
       culler === null ||
       pendingVisibilityResolve !== null ||
-      (!force && framesSinceVisibilityResolve < refreshInterval)
+      (!force &&
+        (refreshInterval === null ||
+          framesSinceVisibilityResolve < refreshInterval))
     ) {
       return
     }

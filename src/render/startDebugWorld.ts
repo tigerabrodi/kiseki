@@ -76,6 +76,7 @@ import { advanceDebugWorldCamera } from './advanceDebugWorldCamera.ts'
 import * as pfw from './profileFrameWork.ts'
 
 const CHUNK_STREAMING_LEAD_DISTANCE = CHUNK_SIZE * 1.5
+const GPU_TIMESTAMP_QUERY_PARAM = 'gpu-timestamps'
 
 export async function startDebugWorld(
   root: HTMLElement
@@ -100,7 +101,12 @@ export async function startDebugWorld(
     }
   }
 
-  const { camera, canvas, renderer, scene } = createDebugWorldScene(viewport)
+  const shouldTrackGpuTimestamps = new URLSearchParams(
+    window.location.search
+  ).has(GPU_TIMESTAMP_QUERY_PARAM)
+  const { camera, canvas, renderer, scene } = createDebugWorldScene(viewport, {
+    trackGpuTimestamps: shouldTrackGpuTimestamps,
+  })
 
   const terrainGenerator = new TerrainGenerator({ seed: 'kiseki' })
   const chunkStreamer = createDebugChunkStreamer()
@@ -183,6 +189,7 @@ export async function startDebugWorld(
     beforeCull: () => gpuOcclusionController.cullIfNeeded(),
     getCuller: () => gpuChunkVisibilityCuller,
     onVisibilityInfoChange: () => applyStatsToHud(),
+    refreshEveryFrames: null,
   })
 
   const gpuMeshCompactionScheduler = createGpuMeshCompactionScheduler({
@@ -390,6 +397,7 @@ export async function startDebugWorld(
 
   const resolveGpuTimestampIfNeeded = (): void => {
     if (
+      !shouldTrackGpuTimestamps ||
       pendingGpuTimestampResolve !== null ||
       renderFramesSinceGpuResolve < 15
     ) {
@@ -414,6 +422,10 @@ export async function startDebugWorld(
   }
 
   const flushGpuTimestamp = async (): Promise<void> => {
+    if (!shouldTrackGpuTimestamps) {
+      return
+    }
+
     if (pendingGpuTimestampResolve !== null) {
       await pendingGpuTimestampResolve
     }

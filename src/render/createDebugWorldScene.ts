@@ -7,10 +7,17 @@ export type DebugWorldScene = {
   scene: THREE.Scene
 }
 
-export function createDebugWorldScene(viewport: HTMLElement): DebugWorldScene {
+type CreateDebugWorldSceneOptions = {
+  trackGpuTimestamps?: boolean
+}
+
+export function createDebugWorldScene(
+  viewport: HTMLElement,
+  options: CreateDebugWorldSceneOptions = {}
+): DebugWorldScene {
   const renderer = new THREE.WebGPURenderer({
     antialias: true,
-    trackTimestamp: true,
+    trackTimestamp: options.trackGpuTimestamps ?? false,
   })
   const canvas = renderer.domElement
   const scene = new THREE.Scene()

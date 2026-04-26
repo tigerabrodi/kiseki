@@ -21,7 +21,7 @@ export type GpuIndirectDrawProfileSampler = {
 export function createGpuIndirectDrawProfileSampler(
   options: CreateGpuIndirectDrawProfileSamplerOptions
 ): GpuIndirectDrawProfileSampler {
-  const refreshInterval = options.refreshEveryFrames ?? 15
+  const refreshInterval = options.refreshEveryFrames ?? 120
   let framesSinceResolve = 0
   let pendingResolve: Promise<void> | null = null
 
