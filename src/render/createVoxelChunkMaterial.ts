@@ -22,6 +22,14 @@ import {
   SDF_AO_NEAR_SURFACE_DISTANCE,
   SDF_AO_SAMPLE_DISTANCE,
 } from './sdfAmbientOcclusion.ts'
+import {
+  SDF_SOFT_SHADOW_DIRECTION,
+  SDF_SOFT_SHADOW_FAR_SAMPLE_DISTANCE,
+  SDF_SOFT_SHADOW_MIN_FACTOR,
+  SDF_SOFT_SHADOW_NEAR_DISTANCE,
+  SDF_SOFT_SHADOW_NEAR_SAMPLE_DISTANCE,
+  SDF_SOFT_SHADOW_OPEN_DISTANCE,
+} from './sdfSoftShadow.ts'
 
 const COORDINATE_MASK = 0x1f
 const MATERIAL_MASK = 0xff
@@ -263,6 +271,29 @@ export function createVoxelChunkMaterial(
     .clamp(0, 1)
     .mul(1 - SDF_AO_MIN_FACTOR)
     .add(SDF_AO_MIN_FACTOR)
+  const softShadowDirection = vec3(
+    SDF_SOFT_SHADOW_DIRECTION.x,
+    SDF_SOFT_SHADOW_DIRECTION.y,
+    SDF_SOFT_SHADOW_DIRECTION.z
+  ).normalize()
+  const nearShadowDistance = sampleSdfDistance(
+    localPosition.add(
+      softShadowDirection.mul(SDF_SOFT_SHADOW_NEAR_SAMPLE_DISTANCE)
+    )
+  )
+  const farShadowDistance = sampleSdfDistance(
+    localPosition.add(
+      softShadowDirection.mul(SDF_SOFT_SHADOW_FAR_SAMPLE_DISTANCE)
+    )
+  )
+  const sdfSoftShadow = nearShadowDistance
+    .abs()
+    .min(farShadowDistance.abs())
+    .sub(SDF_SOFT_SHADOW_NEAR_DISTANCE)
+    .div(SDF_SOFT_SHADOW_OPEN_DISTANCE - SDF_SOFT_SHADOW_NEAR_DISTANCE)
+    .clamp(0, 1)
+    .mul(1 - SDF_SOFT_SHADOW_MIN_FACTOR)
+    .add(SDF_SOFT_SHADOW_MIN_FACTOR)
 
   material.positionNode = Fn(() => {
     surfaceUvVarying.assign(surfaceUv)
@@ -272,6 +303,7 @@ export function createVoxelChunkMaterial(
   material.colorNode = basecolorSample.rgb
     .mul(heightOcclusion)
     .mul(sdfAmbientOcclusion)
+    .mul(sdfSoftShadow)
   material.normalNode = transformNormalToView(localSurfaceNormal).normalize()
   material.roughnessNode = roughnessSample.r
     .mul(0.9)
@@ -281,6 +313,7 @@ export function createVoxelChunkMaterial(
     .mul(0.35)
     .add(float(0.65))
     .mul(sdfAmbientOcclusion)
+    .mul(sdfSoftShadow)
 
   return material
 }
