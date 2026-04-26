@@ -20,6 +20,7 @@ type ProfileFrameWork = {
 }
 
 type ProfileFrameRecordOptions = {
+  fixedStepCount: number
   frameTimeSeconds: number
   frameWork: ProfileFrameWork
   gpuMemoryBytes: number
@@ -86,11 +87,14 @@ export function addProfileMeshWork(
 export function recordProfileFrame(
   options: ProfileFrameRecordOptions
 ): ProfileFrameWork {
+  const frameTimeMs = options.frameTimeSeconds * 1000
+
   options.recorder.recordFrame({
     chunkCount: options.stats.loadedChunkCount,
     cpuTimeMs: options.stats.cpuTimeMs,
     drawCalls: options.stats.drawCalls,
-    frameTimeMs: options.frameTimeSeconds * 1000,
+    fixedStepCount: options.fixedStepCount,
+    frameTimeMs,
     fps: 1 / options.frameTimeSeconds,
     gpuMemoryBytes: options.gpuMemoryBytes,
     gpuTimeMs: options.gpuTimeMs,
@@ -113,6 +117,10 @@ export function recordProfileFrame(
     terrainGenerationTimeMs: options.frameWork.terrainGenerationTimeMs,
     timestampMs: performance.now(),
     triangleCount: options.stats.triangleCount,
+    unaccountedFrameTimeMs: Math.max(
+      0,
+      frameTimeMs - options.stats.cpuTimeMs - (options.gpuTimeMs ?? 0)
+    ),
     visibleChunkCount: options.stats.visibleChunkCount,
   })
 

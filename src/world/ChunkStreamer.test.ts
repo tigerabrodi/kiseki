@@ -114,6 +114,7 @@ describe('ChunkStreamer', () => {
     expect(initialUpdate.loaded.map((entry) => chunkKey(entry.coords))).toEqual(
       ['0,0,0']
     )
+    expect(streamer.getPendingLoadCount()).toBe(26)
     expect(streamer.world.entries()).toHaveLength(1)
 
     for (let i = 0; i < 26; i += 1) {
@@ -122,6 +123,7 @@ describe('ChunkStreamer', () => {
       expect(update.loaded).toHaveLength(1)
     }
 
+    expect(streamer.getPendingLoadCount()).toBe(0)
     expect(streamer.world.entries()).toHaveLength(27)
     expect(streamer.update({ x: 0, y: 0, z: 0 }).didChange).toBe(false)
   })

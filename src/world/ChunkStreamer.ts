@@ -120,6 +120,7 @@ export class ChunkStreamer {
   readonly world = new World()
 
   private readonly createChunk: (coords: ChunkCoordinates) => Chunk
+  private lastPlayerChunkKey: string | null = null
   private readonly loadExtents: ChunkStreamExtents
   private readonly maxLoadsPerUpdate: number
   private readonly pendingLoadCoords = new Map<string, ChunkCoordinates>()
@@ -142,50 +143,68 @@ export class ChunkStreamer {
   }
 
   update(playerChunk: ChunkCoordinates): ChunkStreamUpdate {
+    const playerChunkKey = chunkKey(playerChunk)
+    const hasPlayerChunkChanged = playerChunkKey !== this.lastPlayerChunkKey
+
+    this.lastPlayerChunkKey = playerChunkKey
+
+    if (!hasPlayerChunkChanged && this.pendingLoadCoords.size === 0) {
+      return {
+        didChange: false,
+        loaded: [],
+        playerChunk: { ...playerChunk },
+        unloaded: [],
+      }
+    }
+
     const loaded: Array<WorldChunkEntry> = []
     const unloaded: Array<WorldChunkEntry> = []
 
-    for (
-      let z = playerChunk.z - this.loadExtents.z;
-      z <= playerChunk.z + this.loadExtents.z;
-      z += 1
-    ) {
+    if (hasPlayerChunkChanged) {
       for (
-        let y = playerChunk.y - this.loadExtents.y;
-        y <= playerChunk.y + this.loadExtents.y;
-        y += 1
+        let z = playerChunk.z - this.loadExtents.z;
+        z <= playerChunk.z + this.loadExtents.z;
+        z += 1
       ) {
         for (
-          let x = playerChunk.x - this.loadExtents.x;
-          x <= playerChunk.x + this.loadExtents.x;
-          x += 1
+          let y = playerChunk.y - this.loadExtents.y;
+          y <= playerChunk.y + this.loadExtents.y;
+          y += 1
         ) {
-          const coords = { x, y, z }
+          for (
+            let x = playerChunk.x - this.loadExtents.x;
+            x <= playerChunk.x + this.loadExtents.x;
+            x += 1
+          ) {
+            const coords = { x, y, z }
 
-          if (this.world.hasChunk(coords)) {
-            continue
+            if (this.world.hasChunk(coords)) {
+              continue
+            }
+
+            this.pendingLoadCoords.set(chunkKey(coords), coords)
           }
-
-          this.pendingLoadCoords.set(chunkKey(coords), coords)
         }
       }
-    }
 
-    for (const [key, coords] of this.pendingLoadCoords) {
-      if (isChunkWithinExtents(coords, playerChunk, this.loadExtents)) {
-        continue
+      for (const [key, coords] of this.pendingLoadCoords) {
+        if (isChunkWithinExtents(coords, playerChunk, this.loadExtents)) {
+          continue
+        }
+
+        this.pendingLoadCoords.delete(key)
       }
 
-      this.pendingLoadCoords.delete(key)
-    }
+      for (const entry of this.world.entries()) {
+        if (
+          isChunkWithinExtents(entry.coords, playerChunk, this.unloadExtents)
+        ) {
+          continue
+        }
 
-    for (const entry of this.world.entries()) {
-      if (isChunkWithinExtents(entry.coords, playerChunk, this.unloadExtents)) {
-        continue
+        this.world.deleteChunk(entry.coords)
+        unloaded.push(entry)
       }
-
-      this.world.deleteChunk(entry.coords)
-      unloaded.push(entry)
     }
 
     const loadCandidates = [...this.pendingLoadCoords.values()]
@@ -233,5 +252,9 @@ export class ChunkStreamer {
       (this.unloadExtents.y * 2 + 1) *
       (this.unloadExtents.z * 2 + 1)
     )
+  }
+
+  getPendingLoadCount(): number {
+    return this.pendingLoadCoords.size
   }
 }

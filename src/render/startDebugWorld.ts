@@ -30,10 +30,9 @@ import {
   ProfileRecorder,
 } from '../profiling/ProfileRecorder.ts'
 import type { Chunk } from '../voxel/chunk.ts'
-import { applyDebugStatsHud } from './applyDebugStatsHud.ts'
-import { applyProfileHud as renderProfileHud } from './applyProfileHud.ts'
 import { advanceChunkRevealFactors } from './chunkReveal.ts'
 import { createDebugChunkStreamer } from './createDebugChunkStreamer.ts'
+import { createDebugHudUpdater } from './createDebugHudUpdater.ts'
 import { createDebugWorldMarkup } from './createDebugWorldMarkup.ts'
 import { createDebugWorldGpuRuntime } from './createDebugWorldGpuRuntime.ts'
 import { createDebugWorldScene } from './createDebugWorldScene.ts'
@@ -79,36 +78,16 @@ export async function startDebugWorld(
   root: HTMLElement
 ): Promise<DebugWorldHandle> {
   root.innerHTML = createDebugWorldMarkup()
+  const debugWorldElements = getDebugWorldElements(root)
   const {
-    chunkCountValue,
     copyProfileButton,
-    cpuTimeValue,
-    drawCallsValue,
-    editedVoxelsValue,
-    faceCountValue,
     fixedRateValue,
-    fpsValue,
-    gpuMeshCountValue,
-    gpuMeshMegabytesValue,
-    gpuTimeValue,
-    gpuVoxelCountValue,
-    gpuVoxelMegabytesValue,
     lockButton,
-    meshTimeValue,
-    pipelineStateValue,
-    playerChunkValue,
     pointerStateValue,
-    positionValue,
     profileButton,
-    profileReportValue,
-    profileStateValue,
     statusValue,
-    terrainTimeValue,
-    triangleCountValue,
-    vertexBytesValue,
     viewport,
-    visibleChunksValue,
-  } = getDebugWorldElements(root)
+  } = debugWorldElements
 
   if (!WebGPU.isAvailable()) {
     statusValue.textContent = 'WebGPU unavailable'
@@ -390,48 +369,21 @@ export async function startDebugWorld(
       gpuLightSlab
     )
 
-  const updateProfileHud = (): void => {
-    renderProfileHud(
-      {
-        copyProfileButton,
-        profileButton,
-        profileReportValue,
-        profileStateValue,
-      },
-      profileRecorder.getSessionState(performance.now())
-    )
-  }
+  const applyStatsToHud = createDebugHudUpdater({
+    buildStatsSnapshot,
+    elements: debugWorldElements,
+    profileRecorder,
+  })
 
-  const applyStatsToHud = (): void => {
-    applyDebugStatsHud(
-      {
-        chunkCountValue,
-        cpuTimeValue,
-        drawCallsValue,
-        editedVoxelsValue,
-        faceCountValue,
-        fpsValue,
-        gpuMeshCountValue,
-        gpuMeshMegabytesValue,
-        gpuTimeValue,
-        gpuVoxelCountValue,
-        gpuVoxelMegabytesValue,
-        meshTimeValue,
-        pipelineStateValue,
-        playerChunkValue,
-        positionValue,
-        terrainTimeValue,
-        triangleCountValue,
-        vertexBytesValue,
-        visibleChunksValue,
-      },
-      buildStatsSnapshot()
-    )
-    updateProfileHud()
-  }
+  let wasPointerLocked: boolean | null = null
+  const updatePointerState = (): void => {
+    if (wasPointerLocked === controls.isLocked) {
+      return
+    }
 
-  const updatePointerState = (): void =>
+    wasPointerLocked = controls.isLocked
     updatePointerHud(controls.isLocked, lockButton, pointerStateValue)
+  }
 
   const resolveGpuTimestampIfNeeded = (): void => {
     if (
@@ -522,14 +474,14 @@ export async function startDebugWorld(
         profileRecorder.stop(performance.now(), captureGpuAllocationSnapshot())
       } finally {
         profileButton.disabled = false
-        applyStatsToHud()
+        applyStatsToHud(performance.now(), true)
       }
       return
     }
 
     pendingProfileFrameWork = pfw.createProfileFrameWork()
     profileRecorder.start(performance.now(), captureGpuAllocationSnapshot())
-    applyStatsToHud()
+    applyStatsToHud(performance.now(), true)
   }
   const handleCopyProfileButtonClick = async (): Promise<void> => {
     const report = profileRecorder.getLastReport()
@@ -597,7 +549,7 @@ export async function startDebugWorld(
       return result
     } finally {
       isVoxelEditInFlight = false
-      applyStatsToHud()
+      applyStatsToHud(performance.now(), true)
     }
   }
   const handleViewportMouseDown = (event: MouseEvent): void => {
@@ -634,7 +586,7 @@ export async function startDebugWorld(
   updatePointerState()
 
   fixedRateValue.textContent = '60'
-  applyStatsToHud()
+  applyStatsToHud(performance.now(), true)
   const fixedLoop = new FixedStepLoop({ fixedDeltaSeconds: 1 / 60 })
 
   const uninstallDebugSurface = installDebugWorldSurface({
@@ -702,7 +654,7 @@ export async function startDebugWorld(
     startProfileSession: (): void => {
       pendingProfileFrameWork = pfw.createProfileFrameWork()
       profileRecorder.start(performance.now(), captureGpuAllocationSnapshot())
-      applyStatsToHud()
+      applyStatsToHud(performance.now(), true)
     },
     stopProfileSession: async () => {
       await flushGpuTimestamp()
@@ -711,7 +663,7 @@ export async function startDebugWorld(
         performance.now(),
         captureGpuAllocationSnapshot()
       )
-      applyStatsToHud()
+      applyStatsToHud(performance.now(), true)
       return report
     },
     syncWorld: (): void => {
@@ -721,7 +673,7 @@ export async function startDebugWorld(
     turnCamera: (yawDegrees: number, pitchDegrees = 0): void => {
       turnCameraByDegrees(camera, yawDegrees, pitchDegrees)
       gpuVisibilityTracker.cull(camera, true)
-      applyStatsToHud()
+      applyStatsToHud(performance.now(), true)
     },
   })
 
@@ -831,6 +783,7 @@ export async function startDebugWorld(
       currentCameraPosition,
       frame,
       inputState,
+      maxMovementStepsPerFrame: 2,
       movementSpeed: 8,
       previousCameraPosition,
     })
@@ -843,10 +796,19 @@ export async function startDebugWorld(
 
     void renderer.render(scene, camera)
 
+    if (frame.frameTimeSeconds > 0) {
+      gpuIndirectDrawProfileSampler.tick()
+    }
+
+    renderFramesSinceGpuResolve += 1
+    resolveGpuTimestampIfNeeded()
+    applyStatsToHud()
+
     lastCpuFrameTimeMs = performance.now() - frameStartMs
 
     if (frame.frameTimeSeconds > 0) {
       pendingProfileFrameWork = pfw.recordProfileFrame({
+        fixedStepCount: frame.steps,
         frameTimeSeconds: frame.frameTimeSeconds,
         frameWork: pendingProfileFrameWork,
         gpuMemoryBytes: renderer.info.memory.total,
@@ -854,13 +816,7 @@ export async function startDebugWorld(
         recorder: profileRecorder,
         stats: buildStatsSnapshot(),
       })
-      gpuIndirectDrawProfileSampler.tick()
     }
-
-    renderFramesSinceGpuResolve += 1
-    resolveGpuTimestampIfNeeded()
-
-    applyStatsToHud()
   })
 
   return () => {

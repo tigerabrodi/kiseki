@@ -15,6 +15,7 @@ type AdvanceDebugWorldCameraOptions = {
   currentCameraPosition: THREE.Vector3
   frame: FixedStepFrame
   inputState: FlyInputState
+  maxMovementStepsPerFrame?: number
   movementSpeed: number
   previousCameraPosition: THREE.Vector3
 }
@@ -25,15 +26,19 @@ export function advanceDebugWorldCamera({
   currentCameraPosition,
   frame,
   inputState,
+  maxMovementStepsPerFrame = Number.POSITIVE_INFINITY,
   movementSpeed,
   previousCameraPosition,
 }: AdvanceDebugWorldCameraOptions): void {
-  for (let step = 0; step < frame.steps; step += 1) {
+  const movement = getFlyMovementIntent(inputState)
+  const maxStepCount = Math.max(0, Math.floor(maxMovementStepsPerFrame))
+  const movementStepCount = Math.min(frame.steps, maxStepCount)
+
+  for (let step = 0; step < movementStepCount; step += 1) {
     camera.position.copy(currentCameraPosition)
     camera.updateMatrix()
     previousCameraPosition.copy(currentCameraPosition)
 
-    const movement = getFlyMovementIntent(inputState)
     controls.moveRight(movement.right * movementSpeed * frame.fixedDeltaSeconds)
     controls.moveForward(
       movement.forward * movementSpeed * frame.fixedDeltaSeconds
@@ -43,14 +48,17 @@ export function advanceDebugWorldCamera({
     currentCameraPosition.copy(camera.position)
   }
 
-  if (frame.steps === 0) {
+  if (movementStepCount === 0) {
     previousCameraPosition.copy(currentCameraPosition)
   }
+
+  const interpolationAlpha =
+    movementStepCount > 0 && frame.alpha === 0 ? 1 : frame.alpha
 
   camera.position.lerpVectors(
     previousCameraPosition,
     currentCameraPosition,
-    frame.alpha
+    interpolationAlpha
   )
   camera.updateMatrixWorld()
 }

@@ -117,6 +117,18 @@ describe('ProfileRecorder', () => {
         min: 16,
         samples: 2,
       },
+      fixedStepCount: {
+        average: 0,
+        max: 0,
+        min: 0,
+        samples: 2,
+      },
+      unaccountedFrameTimeMs: {
+        average: 15,
+        max: 16,
+        min: 14,
+        samples: 2,
+      },
       chunkCount: {
         average: 31.5,
         max: 36,
@@ -379,6 +391,10 @@ describe('ProfileRecorder', () => {
     )
     expect(formatProfileReport(report!)).toContain('FPS avg/min/max')
     expect(formatProfileReport(report!)).toContain('Frame ms avg/min/max')
+    expect(formatProfileReport(report!)).toContain(
+      'Unaccounted frame ms avg/min/max'
+    )
+    expect(formatProfileReport(report!)).toContain('Fixed steps avg/min/max')
     expect(formatProfileReport(report!)).toContain('Worst frame 1')
     expect(formatProfileReport(report!)).toContain('CPU @60Hz budget avg/max')
     expect(formatProfileReport(report!)).toContain('Indirect draws avg/min/max')
@@ -417,6 +433,7 @@ describe('ProfileRecorder', () => {
         cpuTimeMs: frameIndex,
         drawCalls: 10 + frameIndex,
         frameTimeMs: 10 + frameIndex,
+        fixedStepCount: frameIndex,
         fps: 100 - frameIndex,
         gpuMemoryBytes: 1024,
         gpuTimeMs: frameIndex === 6 ? 4 : null,
@@ -448,6 +465,7 @@ describe('ProfileRecorder', () => {
     expect(report?.slowFrames[0]).toMatchObject({
       drawCalls: 16,
       elapsedSeconds: 6,
+      fixedStepCount: 6,
       gpuTimeMs: 4,
       lightGeneratedChunkCount: 9,
       meshRebuiltChunkCount: 10,
@@ -455,6 +473,7 @@ describe('ProfileRecorder', () => {
       position: { x: 96, y: 32, z: 48 },
       streamedInChunkCount: 6,
       streamedOutChunkCount: 5,
+      unaccountedFrameTimeMs: 6,
       visibleChunkCount: 46,
     })
   })

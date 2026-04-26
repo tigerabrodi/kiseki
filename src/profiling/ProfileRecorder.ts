@@ -5,6 +5,7 @@ export type ProfileFrameSample = {
   cpuTimeMs: number
   drawCalls?: number
   frameTimeMs: number
+  fixedStepCount?: number
   fps: number
   gpuMemoryBytes: number
   gpuTimeMs: number | null
@@ -23,6 +24,7 @@ export type ProfileFrameSample = {
   terrainGenerationTimeMs?: number
   timestampMs?: number
   triangleCount: number
+  unaccountedFrameTimeMs?: number
   visibleChunkCount?: number
 }
 
@@ -91,6 +93,7 @@ export type ProfileSlowFrameSample = {
   elapsedSeconds: number
   fps: number
   frameTimeMs: number
+  fixedStepCount: number
   gpuTimeMs: number | null
   jsHeapBytes: number | null
   lightGeneratedChunkCount: number
@@ -106,6 +109,7 @@ export type ProfileSlowFrameSample = {
   terrainGeneratedChunkCount: number
   terrainGenerationTimeMs: number
   triangleCount: number
+  unaccountedFrameTimeMs: number
   visibleChunkCount: number | null
 }
 
@@ -116,6 +120,7 @@ export type ProfileReport = {
   fps: ProfileMetricSummary
   frameCount: number
   frameTimeMs: ProfileMetricSummary
+  fixedStepCount: ProfileMetricSummary
   gpuTimeMs: ProfileMetricSummary | null
   indirectDraw: ProfileIndirectDrawSummary | null
   lightGenerationChunkCount: ProfileMetricSummary
@@ -135,6 +140,7 @@ export type ProfileReport = {
   terrainGenerationPerChunkMs: ProfileMetricSummary
   terrainGenerationTimeMs: ProfileMeshGenerationSummary
   triangleCount: ProfileMetricSummary
+  unaccountedFrameTimeMs: ProfileMetricSummary
 }
 
 export type ProfileSessionState = {
@@ -247,6 +253,14 @@ function cloneVector3(
   }
 }
 
+function estimateUnaccountedFrameTimeMs(sample: ProfileFrameSample): number {
+  return Math.max(
+    0,
+    sample.unaccountedFrameTimeMs ??
+      sample.frameTimeMs - sample.cpuTimeMs - (sample.gpuTimeMs ?? 0)
+  )
+}
+
 function createSlowFrameSample(
   sample: ProfileFrameSample,
   elapsedSeconds: number
@@ -258,6 +272,7 @@ function createSlowFrameSample(
     elapsedSeconds,
     fps: sample.fps,
     frameTimeMs: sample.frameTimeMs,
+    fixedStepCount: sample.fixedStepCount ?? 0,
     gpuTimeMs: sample.gpuTimeMs,
     jsHeapBytes: sample.jsHeapBytes,
     lightGeneratedChunkCount: sample.lightGeneratedChunkCount ?? 0,
@@ -273,6 +288,7 @@ function createSlowFrameSample(
     terrainGeneratedChunkCount: sample.terrainGeneratedChunkCount ?? 0,
     terrainGenerationTimeMs: sample.terrainGenerationTimeMs ?? 0,
     triangleCount: sample.triangleCount,
+    unaccountedFrameTimeMs: estimateUnaccountedFrameTimeMs(sample),
     visibleChunkCount: sample.visibleChunkCount ?? null,
   }
 }
@@ -319,6 +335,8 @@ export function formatProfileReport(report: ProfileReport): string {
     `Frames: ${report.frameCount}`,
     `FPS avg/min/max: ${formatMetric(report.fps)}`,
     `Frame ms avg/min/max: ${formatMetric(report.frameTimeMs)}`,
+    `Unaccounted frame ms avg/min/max: ${formatMetric(report.unaccountedFrameTimeMs)}`,
+    `Fixed steps avg/min/max: ${formatMetric(report.fixedStepCount, 1)}`,
     `Chunks avg/min/max: ${formatMetric(report.chunkCount, 1)}`,
     `Triangles avg/min/max: ${formatMetric(report.triangleCount, 1)}`,
     `CPU ms avg/min/max: ${formatMetric(report.cpuTimeMs)}`,
@@ -448,7 +466,7 @@ function formatSlowFrames(
       const generationCounts = `${frame.terrainGeneratedChunkCount}/${frame.sdfGeneratedChunkCount}/${frame.lightGeneratedChunkCount}/${frame.meshRebuiltChunkCount}`
       const generationTimes = `${frame.terrainGenerationTimeMs.toFixed(2)}/${frame.sdfGenerationTimeMs.toFixed(2)}/${frame.lightGenerationTimeMs.toFixed(2)}/${frame.meshGenerationTimeMs.toFixed(2)} ms`
 
-      return `Worst frame ${index + 1}: ${frame.frameTimeMs.toFixed(2)} ms @ ${frame.elapsedSeconds.toFixed(1)}s (${frame.fps.toFixed(2)} FPS), CPU ${frame.cpuTimeMs.toFixed(2)} ms, GPU ${formatNullableMetric(frame.gpuTimeMs)} ms, chunks ${frame.chunkCount}/${formatNullableNumber(frame.visibleChunkCount)} visible, triangles ${frame.triangleCount}, draws ${formatNullableNumber(frame.drawCalls)}, stream +${frame.streamedInChunkCount}/-${frame.streamedOutChunkCount}, gen T/SDF/L/M ${generationCounts}, gen ms T/SDF/L/M ${generationTimes}, heap ${formatNullableBytes(frame.jsHeapBytes)}, pos ${formatVector3(frame.position)}, chunk ${formatVector3(frame.playerChunk)}`
+      return `Worst frame ${index + 1}: ${frame.frameTimeMs.toFixed(2)} ms @ ${frame.elapsedSeconds.toFixed(1)}s (${frame.fps.toFixed(2)} FPS), CPU ${frame.cpuTimeMs.toFixed(2)} ms, GPU ${formatNullableMetric(frame.gpuTimeMs)} ms, unaccounted ${frame.unaccountedFrameTimeMs.toFixed(2)} ms, fixed steps ${frame.fixedStepCount}, chunks ${frame.chunkCount}/${formatNullableNumber(frame.visibleChunkCount)} visible, triangles ${frame.triangleCount}, draws ${formatNullableNumber(frame.drawCalls)}, stream +${frame.streamedInChunkCount}/-${frame.streamedOutChunkCount}, gen T/SDF/L/M ${generationCounts}, gen ms T/SDF/L/M ${generationTimes}, heap ${formatNullableBytes(frame.jsHeapBytes)}, pos ${formatVector3(frame.position)}, chunk ${formatVector3(frame.playerChunk)}`
     }),
   ]
 }
@@ -516,6 +534,7 @@ export class ProfileRecorder {
   private readonly chunkCount = new MetricAccumulator()
   private readonly cpuTimeMs = new MetricAccumulator()
   private readonly frameTimeMs = new MetricAccumulator()
+  private readonly fixedStepCount = new MetricAccumulator()
   private readonly fps = new MetricAccumulator()
   private readonly gpuMemoryBytes = new MetricAccumulator()
   private readonly gpuTimeMs = new MetricAccumulator()
@@ -539,6 +558,7 @@ export class ProfileRecorder {
   private readonly terrainGenerationPerChunkMs = new MetricAccumulator()
   private readonly terrainGenerationTimeMs = new MetricAccumulator()
   private readonly triangleCount = new MetricAccumulator()
+  private readonly unaccountedFrameTimeMs = new MetricAccumulator()
 
   private isRecordingSession = false
   private lastReportValue: ProfileReport | null = null
@@ -572,9 +592,11 @@ export class ProfileRecorder {
     this.chunkCount.add(sample.chunkCount)
     this.cpuTimeMs.add(sample.cpuTimeMs)
     this.frameTimeMs.add(sample.frameTimeMs)
+    this.fixedStepCount.add(sample.fixedStepCount ?? 0)
     this.fps.add(sample.fps)
     this.gpuMemoryBytes.add(sample.gpuMemoryBytes)
     this.triangleCount.add(sample.triangleCount)
+    this.unaccountedFrameTimeMs.add(estimateUnaccountedFrameTimeMs(sample))
     this.recordSlowFrame(sample)
 
     if (sample.jsHeapBytes !== null) {
@@ -701,6 +723,7 @@ export class ProfileRecorder {
       fps: this.fps.summary(),
       frameCount: this.fps.summary().samples,
       frameTimeMs: this.frameTimeMs.summary(),
+      fixedStepCount: this.fixedStepCount.summary(),
       gpuTimeMs:
         this.gpuTimeMs.summary().samples === 0
           ? null
@@ -759,6 +782,7 @@ export class ProfileRecorder {
         total: this.terrainGenerationTimeMs.totalValue(),
       },
       triangleCount: this.triangleCount.summary(),
+      unaccountedFrameTimeMs: this.unaccountedFrameTimeMs.summary(),
     }
 
     this.lastReportValue = report
@@ -785,6 +809,7 @@ export class ProfileRecorder {
     this.chunkCount.reset()
     this.cpuTimeMs.reset()
     this.frameTimeMs.reset()
+    this.fixedStepCount.reset()
     this.fps.reset()
     this.gpuMemoryBytes.reset()
     this.gpuTimeMs.reset()
@@ -808,6 +833,7 @@ export class ProfileRecorder {
     this.terrainGenerationPerChunkMs.reset()
     this.terrainGenerationTimeMs.reset()
     this.triangleCount.reset()
+    this.unaccountedFrameTimeMs.reset()
     this.sessionStartGpuAllocationSnapshot = null
     this.slowFrames = []
   }
