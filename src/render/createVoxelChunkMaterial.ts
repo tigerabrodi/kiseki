@@ -45,6 +45,10 @@ import {
   getVoxelMaterialDebugModeId,
   setVoxelMaterialDebugMode,
 } from './voxelMaterialDebugMode.ts'
+import {
+  createVoxelMaterialLookUniforms,
+  type VoxelMaterialLookUniforms,
+} from './voxelLookMaterialUniforms.ts'
 
 const COORDINATE_MASK = 0x1f
 const MATERIAL_MASK = 0xff
@@ -67,7 +71,8 @@ export function createVoxelChunkMaterial(
   atlas: VoxelTextureAtlas,
   visibilityState?: GpuChunkVisibilityMaterialState,
   sdfState?: GpuSdfMaterialState,
-  lightState?: GpuLightMaterialState
+  lightState?: GpuLightMaterialState,
+  lookUniforms: VoxelMaterialLookUniforms = createVoxelMaterialLookUniforms()
 ): THREE.MeshStandardNodeMaterial {
   const material = new THREE.MeshStandardNodeMaterial()
 
@@ -205,6 +210,7 @@ export function createVoxelChunkMaterial(
     .add(localNormal.mul(tangentSpaceNormal.z))
     .normalize()
   const heightOcclusion = heightSample.r.mul(0.2).add(0.8)
+  const materialLuminanceWeights = vec3(0.2126, 0.7152, 0.0722)
   const chunkSlotIndexNode = uint(
     uniform(0).onObjectUpdate(({ object }) => getChunkSlotIndex(object))
   )
@@ -323,6 +329,11 @@ export function createVoxelChunkMaterial(
     .clamp(0, 1)
     .mul(1 - SDF_AO_MIN_FACTOR)
     .add(SDF_AO_MIN_FACTOR)
+  const tunedSdfAmbientOcclusion = mix(
+    float(1),
+    sdfAmbientOcclusion,
+    lookUniforms.ambientOcclusionStrength
+  )
   const softShadowDirection = vec3(
     SDF_SOFT_SHADOW_DIRECTION.x,
     SDF_SOFT_SHADOW_DIRECTION.y,
@@ -346,6 +357,11 @@ export function createVoxelChunkMaterial(
     .clamp(0, 1)
     .mul(1 - SDF_SOFT_SHADOW_MIN_FACTOR)
     .add(SDF_SOFT_SHADOW_MIN_FACTOR)
+  const tunedSdfSoftShadow = mix(
+    float(1),
+    sdfSoftShadow,
+    lookUniforms.sdfShadowStrength
+  )
   const lightSamplePosition = localPosition.add(localNormal.mul(0.01))
   const voxelLightFactor = sampleLightLevel(lightSamplePosition)
     .toFloat()
@@ -353,11 +369,22 @@ export function createVoxelChunkMaterial(
     .clamp(0, 1)
     .mul(1 - VOXEL_LIGHT_MIN_FACTOR)
     .add(VOXEL_LIGHT_MIN_FACTOR)
-  const finalColor = basecolorSample.rgb
+  const tunedVoxelLightFactor = mix(
+    float(1),
+    voxelLightFactor,
+    lookUniforms.voxelLightStrength
+  )
+  const shadedColor = basecolorSample.rgb
     .mul(heightOcclusion)
-    .mul(sdfAmbientOcclusion)
-    .mul(sdfSoftShadow)
-    .mul(voxelLightFactor)
+    .mul(tunedSdfAmbientOcclusion)
+    .mul(tunedSdfSoftShadow)
+    .mul(tunedVoxelLightFactor)
+  const materialLuminance = shadedColor.dot(materialLuminanceWeights)
+  const finalColor = mix(
+    vec3(materialLuminance),
+    shadedColor,
+    lookUniforms.materialSaturation
+  ).mul(lookUniforms.materialBrightness)
   const revealedFinalColor = mix(
     vec3(
       CHUNK_REVEAL_FOG_COLOR.x,
@@ -370,8 +397,8 @@ export function createVoxelChunkMaterial(
   const finalAmbientOcclusion = heightSample.r
     .mul(0.35)
     .add(float(0.65))
-    .mul(sdfAmbientOcclusion)
-    .mul(sdfSoftShadow)
+    .mul(tunedSdfAmbientOcclusion)
+    .mul(tunedSdfSoftShadow)
   const revealedAmbientOcclusion = mix(
     float(1),
     finalAmbientOcclusion,

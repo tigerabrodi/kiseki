@@ -3,8 +3,15 @@ import * as THREE from 'three/webgpu'
 export type DebugWorldScene = {
   camera: THREE.PerspectiveCamera
   canvas: HTMLCanvasElement
+  lightingRig: DebugWorldLightingRig
   renderer: THREE.WebGPURenderer
   scene: THREE.Scene
+}
+
+export type DebugWorldLightingRig = {
+  ambientLight: THREE.AmbientLight
+  fillLight: THREE.DirectionalLight
+  sunLight: THREE.DirectionalLight
 }
 
 type CreateDebugWorldSceneOptions = {
@@ -32,11 +39,12 @@ export function createDebugWorldScene(
   scene.backgroundIntensity = 0.45
   scene.environmentIntensity = 0.9
 
-  scene.add(new THREE.AmbientLight(0xf4efe4, 0.45))
+  const ambientLight = new THREE.AmbientLight(0xf4efe4, 0.45)
+  scene.add(ambientLight)
 
-  const keyLight = new THREE.DirectionalLight(0xf6d6a7, 1.7)
-  keyLight.position.set(14, 18, 8)
-  scene.add(keyLight)
+  const sunLight = new THREE.DirectionalLight(0xf6d6a7, 1.7)
+  sunLight.position.set(14, 18, 8)
+  scene.add(sunLight)
 
   const fillLight = new THREE.DirectionalLight(0x6eb7ff, 0.55)
   fillLight.position.set(-10, 8, -12)
@@ -45,6 +53,11 @@ export function createDebugWorldScene(
   return {
     camera,
     canvas,
+    lightingRig: {
+      ambientLight,
+      fillLight,
+      sunLight,
+    },
     renderer,
     scene,
   }

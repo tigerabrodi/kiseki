@@ -15,6 +15,10 @@ import type {
 } from '../profiling/ProfileRecorder.ts'
 import type { VoxelMaterialDebugMode } from '../render/voxelMaterialDebugMode.ts'
 import type { VoxelMaterialGalleryInfo } from '../render/createVoxelMaterialGallery.ts'
+import type {
+  VoxelLookPresetId,
+  VoxelLookSettings,
+} from '../render/voxelLookSettings.ts'
 import type { VoxelMaterialComparison } from '../voxel/compareVoxelMaterials.ts'
 import type { ChunkStreamer } from '../world/ChunkStreamer.ts'
 import type { ChunkCoordinates } from '../world/World.ts'
@@ -116,6 +120,15 @@ export type KisekiGpuVisibilityInfo = GpuChunkVisibilityInfo | null
 export type KisekiGpuPipelineInfo = GpuPipelineInfo | null
 export type KisekiMaterialGalleryInfo = VoxelMaterialGalleryInfo | null
 
+export type KisekiVoxelLookInfo = {
+  presetId: VoxelLookPresetId | 'custom'
+  presets: Array<{
+    id: VoxelLookPresetId
+    label: string
+  }>
+  settings: VoxelLookSettings
+}
+
 export type KisekiVoxelEditResult = {
   didEdit: boolean
   message: string
@@ -160,6 +173,7 @@ export type KisekiDebugSurface = {
   getProfileState: () => ProfileSessionState
   getSceneInfo: () => KisekiSceneInfo
   getStats: () => KisekiDebugStats
+  getVoxelLook: () => KisekiVoxelLookInfo
   placeTargetBlock: () => Promise<KisekiVoxelEditResult>
   readGpuChunkMaterials: (
     x: number,
@@ -169,6 +183,8 @@ export type KisekiDebugSurface = {
   setCameraPosition: (x: number, y: number, z: number) => void
   setMaterialDebugMode: (mode: VoxelMaterialDebugMode) => VoxelMaterialDebugMode
   setMaterialGalleryVisible: (isVisible: boolean) => boolean
+  setVoxelLook: (settings: Partial<VoxelLookSettings>) => VoxelLookSettings
+  setVoxelLookPreset: (presetId: VoxelLookPresetId) => VoxelLookSettings
   startProfileSession: () => void
   stopProfileSession: () => Promise<ProfileReport | null>
   syncWorld: () => void

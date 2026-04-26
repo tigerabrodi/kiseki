@@ -117,6 +117,16 @@ export function createDebugWorldMarkup(): string {
             Copy Report
           </button>
         </div>
+        <section class="look-panel" data-voxel-look-panel>
+          <div class="look-panel__header">
+            <h2>World Look</h2>
+            <select
+              aria-label="World look preset"
+              data-voxel-look-preset
+            ></select>
+          </div>
+          <div class="look-grid" data-voxel-look-controls></div>
+        </section>
         <pre class="profile-report" data-profile-report>
 Press Start Profile Run, fly through open terrain and dense slopes, then stop to capture a fresh GPU occlusion run.
         </pre>

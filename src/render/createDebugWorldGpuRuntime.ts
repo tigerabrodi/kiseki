@@ -25,6 +25,7 @@ import {
 } from './createVoxelMaterialGallery.ts'
 import { loadHdrEnvironment } from './loadHdrEnvironment.ts'
 import { loadVoxelTextureAtlas } from './loadVoxelTextureAtlas.ts'
+import type { VoxelMaterialLookUniforms } from './voxelLookMaterialUniforms.ts'
 
 export type DebugWorldGpuRuntime = {
   disposeHdrEnvironment: () => void
@@ -50,6 +51,7 @@ export type DebugWorldGpuRuntime = {
 }
 
 type CreateDebugWorldGpuRuntimeOptions = {
+  materialLookUniforms: VoxelMaterialLookUniforms
   maxRetainedChunkCount: number
   renderer: WebGPURenderer
   scene: THREE.Scene
@@ -150,7 +152,8 @@ export async function createDebugWorldGpuRuntime(
     atlas,
     gpuChunkVisibilityCuller.getMaterialState(),
     gpuSdfSlab.getMaterialState(),
-    gpuLightSlab.getMaterialState()
+    gpuLightSlab.getMaterialState(),
+    options.materialLookUniforms
   )
   const voxelMaterialGallery = createVoxelMaterialGallery(atlas)
 

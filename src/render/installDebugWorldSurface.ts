@@ -11,6 +11,7 @@ import {
   type KisekiGpuPipelineInfo,
   type KisekiGpuVisibilityInfo,
   type KisekiMaterialGalleryInfo,
+  type KisekiVoxelLookInfo,
   type KisekiVoxelEditResult,
 } from '../debug/installKisekiDebugSurface.ts'
 import type { GpuChunkMeshCache } from '../gpu/GpuChunkMeshCache.ts'
@@ -40,6 +41,10 @@ import {
   setVoxelMaterialDebugMode,
   VOXEL_MATERIAL_DEBUG_MODES,
 } from './voxelMaterialDebugMode.ts'
+import type {
+  VoxelLookPresetId,
+  VoxelLookSettings,
+} from './voxelLookSettings.ts'
 
 type DisposableMesh = THREE.Mesh<
   THREE.BufferGeometry,
@@ -80,9 +85,12 @@ type InstallDebugWorldSurfaceOptions = {
   getProfileReport: () => ProfileReport | null
   getProfileState: () => ProfileSessionState
   getScene: () => THREE.Scene
+  getVoxelLook: () => KisekiVoxelLookInfo
   placeTargetBlock: () => Promise<KisekiVoxelEditResult>
   setCameraPosition: (x: number, y: number, z: number) => void
   setMaterialGalleryVisible: (isVisible: boolean) => boolean
+  setVoxelLook: (settings: Partial<VoxelLookSettings>) => VoxelLookSettings
+  setVoxelLookPreset: (presetId: VoxelLookPresetId) => VoxelLookSettings
   startProfileSession: () => void
   stopProfileSession: () => Promise<ProfileReport | null>
   syncWorld: () => void
@@ -239,6 +247,7 @@ export function installDebugWorldSurface(
       }
     },
     getStats: options.buildStatsSnapshot,
+    getVoxelLook: options.getVoxelLook,
     placeTargetBlock: options.placeTargetBlock,
     readGpuChunkMaterials: async (x: number, y: number, z: number) => {
       const gpuDevice = options.getGpuDevice()
@@ -257,6 +266,8 @@ export function installDebugWorldSurface(
         mode
       ),
     setMaterialGalleryVisible: options.setMaterialGalleryVisible,
+    setVoxelLook: options.setVoxelLook,
+    setVoxelLookPreset: options.setVoxelLookPreset,
     startProfileSession: options.startProfileSession,
     stopProfileSession: options.stopProfileSession,
     syncWorld: options.syncWorld,

@@ -21,11 +21,6 @@ import type { GpuSdfSlab } from '../gpu/GpuSdfSlab.ts'
 import type { GpuTerrainGenerator } from '../gpu/GpuTerrainGenerator.ts'
 import type { GpuVoxelSlab } from '../gpu/GpuVoxelSlab.ts'
 import {
-  applyVoxelEdit,
-  type VoxelEditResult,
-  type VoxelEditMode,
-} from '../interaction/applyVoxelEdit.ts'
-import {
   formatProfileReport,
   ProfileRecorder,
 } from '../profiling/ProfileRecorder.ts'
@@ -36,6 +31,9 @@ import { createDebugHudUpdater } from './createDebugHudUpdater.ts'
 import { createDebugWorldMarkup } from './createDebugWorldMarkup.ts'
 import { createDebugWorldGpuRuntime } from './createDebugWorldGpuRuntime.ts'
 import { createDebugWorldScene } from './createDebugWorldScene.ts'
+import { createDebugFlyKeyHandlers } from './createDebugFlyKeyHandlers.ts'
+import { createVoxelEditHandler } from './createVoxelEditHandler.ts'
+import { createVoxelLookController } from './createVoxelLookController.ts'
 import { createGpuIndirectDrawProfileSampler } from './createGpuIndirectDrawProfileSampler.ts'
 import { createGpuMeshStatsRefresher } from './createGpuMeshStatsRefresher.ts'
 import { createGpuOcclusionController } from './createGpuOcclusionController.ts'
@@ -56,14 +54,8 @@ import { installDebugWorldEventHandlers } from './installDebugWorldEventHandlers
 import { installDebugWorldSurface } from './installDebugWorldSurface.ts'
 import { createGpuMeshCompactionScheduler } from './createGpuMeshCompactionScheduler.ts'
 import { setupInitialCameraPose } from './setupInitialCameraPose.ts'
-import {
-  regenerateGpuLightChunks,
-  syncStreamedGpuLightBuffers,
-} from './syncStreamedGpuLightBuffers.ts'
-import {
-  regenerateGpuSdfChunks,
-  syncStreamedGpuSdfBuffers,
-} from './syncStreamedGpuSdfBuffers.ts'
+import { syncStreamedGpuLightBuffers } from './syncStreamedGpuLightBuffers.ts'
+import { syncStreamedGpuSdfBuffers } from './syncStreamedGpuSdfBuffers.ts'
 import { syncStreamedGpuChunkMeshes } from './syncStreamedGpuChunkMeshes.ts'
 import { syncStreamedGpuVoxelBuffers } from './syncStreamedGpuVoxelBuffers.ts'
 import {
@@ -104,9 +96,10 @@ export async function startDebugWorld(
   const shouldTrackGpuTimestamps = new URLSearchParams(
     window.location.search
   ).has(GPU_TIMESTAMP_QUERY_PARAM)
-  const { camera, canvas, renderer, scene } = createDebugWorldScene(viewport, {
-    trackGpuTimestamps: shouldTrackGpuTimestamps,
-  })
+  const { camera, canvas, lightingRig, renderer, scene } =
+    createDebugWorldScene(viewport, {
+      trackGpuTimestamps: shouldTrackGpuTimestamps,
+    })
 
   const terrainGenerator = new TerrainGenerator({ seed: 'kiseki' })
   const chunkStreamer = createDebugChunkStreamer()
@@ -129,6 +122,12 @@ export async function startDebugWorld(
   let hdrEnvironmentName: string | null = null
   let voxelChunkMaterial: THREE.MeshStandardNodeMaterial | null = null
   let voxelMaterialGallery: VoxelMaterialGallery | null = null
+  const voxelLookController = createVoxelLookController({
+    lightingRig,
+    renderer,
+    root,
+    scene,
+  })
   let disposeHdrEnvironment = (): void => {}
   let gpuDevice: GPUDevice | null = null
   let gpuChunkIndirectDrawCuller: GpuChunkIndirectDrawCuller | null = null
@@ -148,7 +147,6 @@ export async function startDebugWorld(
   let gpuVoxelSlab: GpuVoxelSlab | null = null
   let pendingGpuTimestampResolve: Promise<void> | null = null
   let renderFramesSinceGpuResolve = 0
-  let isVoxelEditInFlight = false
   const profileRecorder = new ProfileRecorder()
   let pendingProfileFrameWork = pfw.createProfileFrameWork()
   const gpuIndirectDrawProfileSampler = createGpuIndirectDrawProfileSampler({
@@ -440,38 +438,7 @@ export async function startDebugWorld(
     }
   }
 
-  const onKeyChange =
-    (pressed: boolean) =>
-    (event: KeyboardEvent): void => {
-      switch (event.code) {
-        case 'KeyW':
-          inputState.forward = pressed
-          break
-        case 'KeyS':
-          inputState.backward = pressed
-          break
-        case 'KeyA':
-          inputState.left = pressed
-          break
-        case 'KeyD':
-          inputState.right = pressed
-          break
-        case 'Space':
-          inputState.up = pressed
-          break
-        case 'ShiftLeft':
-        case 'ShiftRight':
-          inputState.down = pressed
-          break
-        default:
-          return
-      }
-
-      event.preventDefault()
-    }
-
-  const handleKeyDown = onKeyChange(true)
-  const handleKeyUp = onKeyChange(false)
+  const { handleKeyDown, handleKeyUp } = createDebugFlyKeyHandlers(inputState)
   const handleLock = (): void => updatePointerState()
   const handleUnlock = (): void => updatePointerState()
   const handleLockButtonClick = (): void => {
@@ -507,66 +474,27 @@ export async function startDebugWorld(
 
     await navigator.clipboard.writeText(formatProfileReport(report))
   }
-  const handleVoxelEdit = async (
-    mode: VoxelEditMode,
-    requirePointerLock = true
-  ): Promise<VoxelEditResult> => {
-    if (
-      (requirePointerLock && !controls.isLocked) ||
-      gpuDevice === null ||
-      gpuChunkMesher === null ||
-      gpuChunkMeshCache === null ||
-      gpuVoxelCache === null ||
-      isVoxelEditInFlight
-    ) {
-      return {
-        didEdit: false,
-        message: 'Pointer is unlocked or GPU world is not ready',
-        touchedChunks: [],
-        touchedChunkCount: 0,
-      }
-    }
-
-    isVoxelEditInFlight = true
-
-    try {
-      const result = await applyVoxelEdit({
-        camera,
-        chunkStreamer,
-        device: gpuDevice,
-        gpuChunkMeshCache,
-        gpuChunkMesher,
-        gpuVoxelCache,
-        mode,
-        overrideStore: voxelOverrideStore,
-      })
-
-      statusValue.textContent = result.message
-
-      if (result.didEdit) {
-        regenerateGpuSdfChunks({
-          chunkCoords: result.touchedChunks,
-          gpuSdfCache: gpuChunkSdfCache,
-          gpuSdfGenerator,
-          gpuVoxelCache,
-        })
-        regenerateGpuLightChunks({
-          chunkCoords: result.touchedChunks,
-          gpuLightCache: gpuChunkLightCache,
-          gpuLightGenerator,
-          gpuVoxelCache,
-        })
-        gpuOcclusionController.syncGraph()
-        gpuVisibilityTracker.cull(camera, true)
-        gpuMeshCompactionScheduler.schedule()
-      }
-
-      return result
-    } finally {
-      isVoxelEditInFlight = false
-      applyStatsToHud(performance.now(), true)
-    }
-  }
+  const handleVoxelEdit = createVoxelEditHandler({
+    camera,
+    chunkStreamer,
+    controls,
+    getGpuChunkLightCache: () => gpuChunkLightCache,
+    getGpuChunkMeshCache: () => gpuChunkMeshCache,
+    getGpuChunkMesher: () => gpuChunkMesher,
+    getGpuChunkSdfCache: () => gpuChunkSdfCache,
+    getGpuChunkVoxelCache: () => gpuVoxelCache,
+    getGpuDevice: () => gpuDevice,
+    getGpuLightGenerator: () => gpuLightGenerator,
+    getGpuSdfGenerator: () => gpuSdfGenerator,
+    onAfterEditAttempt: () => applyStatsToHud(performance.now(), true),
+    onWorldEdited: () => {
+      gpuOcclusionController.syncGraph()
+      gpuVisibilityTracker.cull(camera, true)
+      gpuMeshCompactionScheduler.schedule()
+    },
+    overrideStore: voxelOverrideStore,
+    statusValue,
+  })
   const handleViewportMouseDown = (event: MouseEvent): void => {
     if (event.button === 0) {
       event.preventDefault()
@@ -652,6 +580,7 @@ export async function startDebugWorld(
     getProfileReport: () => profileRecorder.getLastReport(),
     getProfileState: () => profileRecorder.getSessionState(performance.now()),
     getScene: () => scene,
+    getVoxelLook: voxelLookController.getInfo,
     placeTargetBlock: async () => handleVoxelEdit('place', false),
     setCameraPosition: (x: number, y: number, z: number): void => {
       currentCameraPosition.set(x, y, z)
@@ -665,6 +594,8 @@ export async function startDebugWorld(
       voxelMaterialGallery?.syncToCamera(camera)
       return voxelMaterialGallery?.info().isVisible ?? false
     },
+    setVoxelLook: voxelLookController.setSettings,
+    setVoxelLookPreset: voxelLookController.setPreset,
     startProfileSession: (): void => {
       pendingProfileFrameWork = pfw.createProfileFrameWork()
       profileRecorder.start(performance.now(), captureGpuAllocationSnapshot())
@@ -705,6 +636,7 @@ export async function startDebugWorld(
     window.removeEventListener('resize', resize)
     uninstallEventHandlers()
     uninstallDebugSurface()
+    voxelLookController.disposeControls()
     controls.dispose()
     disposeChunkMeshPool(chunkMeshSlotMap)
     gpuChunkMeshCache?.dispose()
@@ -735,6 +667,7 @@ export async function startDebugWorld(
     await renderer.init()
     statusValue.textContent = 'Loading assets'
     const gpuRuntime = await createDebugWorldGpuRuntime({
+      materialLookUniforms: voxelLookController.materialUniforms,
       maxRetainedChunkCount,
       renderer,
       scene,
@@ -760,6 +693,8 @@ export async function startDebugWorld(
     voxelMaterialGallery = gpuRuntime.voxelMaterialGallery
     hdrEnvironmentName = gpuRuntime.hdrEnvironmentName
     disposeHdrEnvironment = gpuRuntime.disposeHdrEnvironment
+    voxelLookController.applyDefaultPreset()
+    voxelLookController.installControls()
     statusValue.textContent = 'WebGPU ready'
   } catch (error) {
     statusValue.textContent = 'Renderer setup failed'
