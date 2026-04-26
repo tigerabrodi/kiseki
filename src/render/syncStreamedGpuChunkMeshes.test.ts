@@ -103,4 +103,42 @@ describe('syncStreamedGpuChunkMeshes', () => {
     expect(chunkMeshSlotMap.get(handle.slotIndex)).toBe(pooledMesh)
     expect(worldGroup.children).toContain(pooledMesh)
   })
+
+  it('batches stream remeshes into one GPU mesher submission', () => {
+    const coords = { x: 0, y: 0, z: 0 }
+    const entry = { chunk: new Chunk(), coords }
+    const handle = createRenderHandle(4)
+    const meshChunks = vi.fn()
+    const chunkMeshCache = {
+      getMesh: () => handle,
+      sync: vi.fn(),
+    } as unknown as GpuChunkMeshCache
+    const gpuVoxelCache = {
+      getBuffer: () => ({
+        buffer: createFakeGpuBuffer(),
+        byteLength: 4,
+        byteOffset: 0,
+        label: 'voxel',
+        slotIndex: 0,
+      }),
+    } as unknown as GpuChunkVoxelCache
+
+    syncStreamedGpuChunkMeshes({
+      chunkMeshCache,
+      chunkMesher: { meshChunks } as never,
+      chunkMeshMap: new Map(),
+      chunkMeshSlotMap: new Map(),
+      gpuVoxelCache,
+      material: new THREE.MeshStandardNodeMaterial(),
+      update: { loaded: [entry], unloaded: [] },
+      worldGroup: new THREE.Group(),
+      worldHasChunk: (candidate) =>
+        candidate.x === coords.x &&
+        candidate.y === coords.y &&
+        candidate.z === coords.z,
+    })
+
+    expect(meshChunks).toHaveBeenCalledTimes(1)
+    expect(meshChunks.mock.calls[0]?.[0]).toHaveLength(1)
+  })
 })

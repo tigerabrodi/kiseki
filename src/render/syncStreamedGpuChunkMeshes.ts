@@ -3,7 +3,7 @@ import * as THREE from 'three/webgpu'
 import type { GpuChunkMeshCache } from '../gpu/GpuChunkMeshCache.ts'
 import { GpuChunkMesher } from '../gpu/GpuChunkMesher.ts'
 import type { GpuChunkVoxelCache } from '../gpu/GpuChunkVoxelCache.ts'
-import { remeshGpuChunkAtCoords } from '../gpu/remeshGpuChunkAtCoords.ts'
+import { remeshGpuChunksAtCoords } from '../gpu/remeshGpuChunkAtCoords.ts'
 import type { ChunkStreamUpdate } from '../world/ChunkStreamer.ts'
 import { chunkKey, chunkOrigin, type ChunkCoordinates } from '../world/World.ts'
 import { getChunkCoordsWithCardinalNeighbors } from '../world/worldVoxelCoordinates.ts'
@@ -147,24 +147,14 @@ export function syncStreamedGpuChunkMeshes(
     )
   }
 
-  let remeshedChunkCount = 0
-
-  for (const coords of collectStreamAffectedChunkCoords(options.update)) {
-    if (!options.worldHasChunk(coords)) {
-      continue
-    }
-
-    if (
-      remeshGpuChunkAtCoords(
-        options.chunkMesher,
-        options.chunkMeshCache,
-        options.gpuVoxelCache,
-        coords
-      )
-    ) {
-      remeshedChunkCount += 1
-    }
-  }
+  const remeshedChunkCount = remeshGpuChunksAtCoords(
+    options.chunkMesher,
+    options.chunkMeshCache,
+    options.gpuVoxelCache,
+    collectStreamAffectedChunkCoords(options.update).filter((coords) =>
+      options.worldHasChunk(coords)
+    )
+  )
 
   options.worldGroup.updateMatrixWorld(true)
 

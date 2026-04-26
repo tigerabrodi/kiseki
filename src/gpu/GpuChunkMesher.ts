@@ -106,6 +106,12 @@ export type GpuChunkMeshReadback = GpuChunkMeshCounts & {
   packedVertices: Uint32Array
 }
 
+export type GpuChunkMeshJob = {
+  currentVoxelBuffer: GpuVoxelBufferHandle
+  handle: GpuChunkMeshHandle
+  neighbors: GpuVoxelBufferNeighbors
+}
+
 const ZERO_MESH_COUNTERS = new Uint32Array(4)
 
 function createMesherParamBufferData(faceDirectionIndex: number): Uint32Array {
@@ -397,27 +403,10 @@ export class GpuChunkMesher {
     this.zeroVoxelBuffer.destroy()
   }
 
-  meshChunk(
-    handle: GpuChunkMeshHandle,
-    currentVoxelBuffer: GpuVoxelBufferHandle,
-    neighbors: GpuVoxelBufferNeighbors
-  ): void {
+  private encodeMeshChunk(encoder: GPUCommandEncoder, job: GpuChunkMeshJob) {
+    const { currentVoxelBuffer, handle, neighbors } = job
     const vertexWriteTarget = getMeshVertexWriteTarget(handle)
     const indexWriteTarget = getMeshIndexWriteTarget(handle)
-    const encoder = this.device.createCommandEncoder({
-      label: `${handle.label}_encoder`,
-    })
-
-    this.device.queue.writeBuffer(
-      handle.countsBuffer,
-      handle.countsByteOffset,
-      ZERO_MESH_COUNTERS
-    )
-    this.device.queue.writeBuffer(
-      handle.indirectBuffer,
-      handle.indirectByteOffset,
-      createGpuChunkIndirectDrawTemplate(handle.firstIndex, handle.baseVertex)
-    )
 
     for (const [
       faceDirectionIndex,
@@ -494,6 +483,50 @@ export class GpuChunkMesher {
       handle.indirectByteOffset,
       Uint32Array.BYTES_PER_ELEMENT
     )
+  }
+
+  meshChunk(
+    handle: GpuChunkMeshHandle,
+    currentVoxelBuffer: GpuVoxelBufferHandle,
+    neighbors: GpuVoxelBufferNeighbors
+  ): void {
+    this.meshChunks([
+      {
+        currentVoxelBuffer,
+        handle,
+        neighbors,
+      },
+    ])
+  }
+
+  meshChunks(jobs: ReadonlyArray<GpuChunkMeshJob>): void {
+    if (jobs.length === 0) {
+      return
+    }
+
+    const encoder = this.device.createCommandEncoder({
+      label:
+        jobs.length === 1
+          ? `${jobs[0]?.handle.label ?? 'chunk_mesh'}_encoder`
+          : `chunk_mesher_batch_${jobs.length}_encoder`,
+    })
+
+    for (const job of jobs) {
+      this.device.queue.writeBuffer(
+        job.handle.countsBuffer,
+        job.handle.countsByteOffset,
+        ZERO_MESH_COUNTERS
+      )
+      this.device.queue.writeBuffer(
+        job.handle.indirectBuffer,
+        job.handle.indirectByteOffset,
+        createGpuChunkIndirectDrawTemplate(
+          job.handle.firstIndex,
+          job.handle.baseVertex
+        )
+      )
+      this.encodeMeshChunk(encoder, job)
+    }
 
     this.device.queue.submit([encoder.finish()])
   }

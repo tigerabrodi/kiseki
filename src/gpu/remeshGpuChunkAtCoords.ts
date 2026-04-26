@@ -1,6 +1,7 @@
 import type { GpuChunkMeshCache } from './GpuChunkMeshCache.ts'
 import {
   type GpuVoxelBufferNeighbors,
+  type GpuChunkMeshJob,
   GpuChunkMesher,
 } from './GpuChunkMesher.ts'
 import type { GpuChunkVoxelCache } from './GpuChunkVoxelCache.ts'
@@ -40,4 +41,48 @@ export function remeshGpuChunkAtCoords(
   )
 
   return true
+}
+
+export function createGpuChunkRemeshJob(
+  gpuChunkMeshCache: GpuChunkMeshCache,
+  gpuVoxelCache: GpuChunkVoxelCache,
+  coords: ChunkCoordinates
+): GpuChunkMeshJob | null {
+  const handle = gpuChunkMeshCache.getMesh(coords)
+  const currentVoxelBuffer = gpuVoxelCache.getBuffer(coords)
+
+  if (handle === undefined || currentVoxelBuffer === undefined) {
+    return null
+  }
+
+  return {
+    currentVoxelBuffer,
+    handle,
+    neighbors: getGpuVoxelBufferNeighbors(gpuVoxelCache, coords),
+  }
+}
+
+export function remeshGpuChunksAtCoords(
+  gpuChunkMesher: GpuChunkMesher,
+  gpuChunkMeshCache: GpuChunkMeshCache,
+  gpuVoxelCache: GpuChunkVoxelCache,
+  chunkCoords: ReadonlyArray<ChunkCoordinates>
+): number {
+  const jobs = chunkCoords.flatMap((coords) => {
+    const job = createGpuChunkRemeshJob(
+      gpuChunkMeshCache,
+      gpuVoxelCache,
+      coords
+    )
+
+    return job === null ? [] : [job]
+  })
+
+  if (jobs.length === 0) {
+    return 0
+  }
+
+  gpuChunkMesher.meshChunks(jobs)
+
+  return jobs.length
 }
