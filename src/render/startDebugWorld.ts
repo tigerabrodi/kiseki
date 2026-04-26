@@ -138,7 +138,9 @@ export async function startDebugWorld(
   let smoothedFps = 60
   let lastCpuFrameTimeMs = 0
   let lastGpuFrameTimeMs: number | null = null
+  let lastLightGenerationTimeMs = 0
   let lastMeshGenerationTimeMs = 0
+  let lastSdfGenerationTimeMs = 0
   let lastTerrainGenerationTimeMs = 0
   let hdrEnvironmentName: string | null = null
   let voxelChunkMaterial: THREE.MeshStandardNodeMaterial | null = null
@@ -276,18 +278,35 @@ export async function startDebugWorld(
         )
       }
 
-      syncStreamedGpuSdfBuffers({
+      const sdfSyncResult = syncStreamedGpuSdfBuffers({
         gpuSdfCache: gpuChunkSdfCache,
         gpuSdfGenerator,
         gpuVoxelCache,
         update: streamUpdate,
       })
-      syncStreamedGpuLightBuffers({
+      lastSdfGenerationTimeMs = sdfSyncResult.sdfGenerationTimeMs
+
+      if (sdfSyncResult.generatedChunkCount > 0) {
+        profileRecorder.recordSdfGeneration(
+          lastSdfGenerationTimeMs,
+          sdfSyncResult.generatedChunkCount
+        )
+      }
+
+      const lightSyncResult = syncStreamedGpuLightBuffers({
         gpuLightCache: gpuChunkLightCache,
         gpuLightGenerator,
         gpuVoxelCache,
         update: streamUpdate,
       })
+      lastLightGenerationTimeMs = lightSyncResult.lightGenerationTimeMs
+
+      if (lightSyncResult.generatedChunkCount > 0) {
+        profileRecorder.recordLightGeneration(
+          lastLightGenerationTimeMs,
+          lightSyncResult.generatedChunkCount
+        )
+      }
 
       syncGpuChunkMeshes(streamUpdate)
       gpuMeshCompactionScheduler.schedule()
@@ -360,7 +379,12 @@ export async function startDebugWorld(
     }
   }
   const captureGpuAllocationSnapshot = () =>
-    getGpuAllocationSnapshot(gpuChunkMeshSlab, gpuVoxelSlab)
+    getGpuAllocationSnapshot(
+      gpuChunkMeshSlab,
+      gpuVoxelSlab,
+      gpuSdfSlab,
+      gpuLightSlab
+    )
 
   const updateProfileHud = (): void => {
     renderProfileHud(

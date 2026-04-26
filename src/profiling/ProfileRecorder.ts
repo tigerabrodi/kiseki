@@ -33,7 +33,9 @@ export type ProfileAllocationPoolSummary = {
 
 export type ProfileAllocationSummary = {
   isGpuPoolStable: boolean
+  light: ProfileAllocationPoolSummary | null
   mesh: ProfileAllocationPoolSummary | null
+  sdf: ProfileAllocationPoolSummary | null
   totalBufferCount: ProfileMetricDelta
   totalReservedByteLength: ProfileMetricDelta
   voxel: ProfileAllocationPoolSummary | null
@@ -68,12 +70,18 @@ export type ProfileReport = {
   frameCount: number
   gpuTimeMs: ProfileMetricSummary | null
   indirectDraw: ProfileIndirectDrawSummary | null
+  lightGenerationChunkCount: ProfileMetricSummary
+  lightGenerationPerChunkMs: ProfileMetricSummary
+  lightGenerationTimeMs: ProfileMeshGenerationSummary
   occlusion: ProfileOcclusionSummary | null
   allocation: ProfileAllocationSummary | null
   memory: ProfileMemorySummary
   meshGenerationChunkCount: ProfileMetricSummary
   meshGenerationPerChunkMs: ProfileMetricSummary
   meshGenerationTimeMs: ProfileMeshGenerationSummary
+  sdfGenerationChunkCount: ProfileMetricSummary
+  sdfGenerationPerChunkMs: ProfileMetricSummary
+  sdfGenerationTimeMs: ProfileMeshGenerationSummary
   terrainGenerationChunkCount: ProfileMetricSummary
   terrainGenerationPerChunkMs: ProfileMetricSummary
   terrainGenerationTimeMs: ProfileMeshGenerationSummary
@@ -194,7 +202,9 @@ function buildAllocationSummary(
   return {
     isGpuPoolStable:
       totalBufferCount.delta === 0 && totalReservedByteLength.delta === 0,
+    light: buildAllocationPoolSummary(start.light, end.light),
     mesh: buildAllocationPoolSummary(start.mesh, end.mesh),
+    sdf: buildAllocationPoolSummary(start.sdf, end.sdf),
     totalBufferCount,
     totalReservedByteLength,
     voxel: buildAllocationPoolSummary(start.voxel, end.voxel),
@@ -254,6 +264,14 @@ export function formatProfileReport(report: ProfileReport): string {
     `Terrain chunks avg/min/max: ${formatMetric(report.terrainGenerationChunkCount, 1)}`,
     `Terrain ms avg/max/total: ${report.terrainGenerationTimeMs.average.toFixed(2)} / ${report.terrainGenerationTimeMs.max.toFixed(2)} / ${report.terrainGenerationTimeMs.total.toFixed(2)}`,
     `Terrain ms/chunk avg/min/max: ${formatMetric(report.terrainGenerationPerChunkMs)}`,
+    `SDF dispatches: ${report.sdfGenerationTimeMs.samples}`,
+    `SDF chunks avg/min/max: ${formatMetric(report.sdfGenerationChunkCount, 1)}`,
+    `SDF ms avg/max/total: ${report.sdfGenerationTimeMs.average.toFixed(2)} / ${report.sdfGenerationTimeMs.max.toFixed(2)} / ${report.sdfGenerationTimeMs.total.toFixed(2)}`,
+    `SDF ms/chunk avg/min/max: ${formatMetric(report.sdfGenerationPerChunkMs)}`,
+    `Light dispatches: ${report.lightGenerationTimeMs.samples}`,
+    `Light chunks avg/min/max: ${formatMetric(report.lightGenerationChunkCount, 1)}`,
+    `Light ms avg/max/total: ${report.lightGenerationTimeMs.average.toFixed(2)} / ${report.lightGenerationTimeMs.max.toFixed(2)} / ${report.lightGenerationTimeMs.total.toFixed(2)}`,
+    `Light ms/chunk avg/min/max: ${formatMetric(report.lightGenerationPerChunkMs)}`,
     `Mesh rebuilds: ${report.meshGenerationTimeMs.samples}`,
     `Mesh chunks avg/min/max: ${formatMetric(report.meshGenerationChunkCount, 1)}`,
     `Mesh ms avg/max/total: ${report.meshGenerationTimeMs.average.toFixed(2)} / ${report.meshGenerationTimeMs.max.toFixed(2)} / ${report.meshGenerationTimeMs.total.toFixed(2)}`,
@@ -279,6 +297,16 @@ export function formatProfileReport(report: ProfileReport): string {
       report.allocation?.mesh === null || report.allocation === null
         ? 'Unavailable'
         : `${report.allocation.mesh.slotAllocationCount} / ${report.allocation.mesh.slotReleaseCount} / ${report.allocation.mesh.highWaterCount}`
+    }`,
+    `SDF slot ops alloc/free/high-water: ${
+      report.allocation?.sdf === null || report.allocation === null
+        ? 'Unavailable'
+        : `${report.allocation.sdf.slotAllocationCount} / ${report.allocation.sdf.slotReleaseCount} / ${report.allocation.sdf.highWaterCount}`
+    }`,
+    `Light slot ops alloc/free/high-water: ${
+      report.allocation?.light === null || report.allocation === null
+        ? 'Unavailable'
+        : `${report.allocation.light.slotAllocationCount} / ${report.allocation.light.slotReleaseCount} / ${report.allocation.light.highWaterCount}`
     }`,
     `JS heap avg/max: ${
       report.memory.jsHeapBytes === null
@@ -359,12 +387,18 @@ export class ProfileRecorder {
   private readonly indirectCommandCount = new MetricAccumulator()
   private readonly indirectZeroedCommandCount = new MetricAccumulator()
   private readonly jsHeapBytes = new MetricAccumulator()
+  private readonly lightGenerationChunkCount = new MetricAccumulator()
+  private readonly lightGenerationPerChunkMs = new MetricAccumulator()
+  private readonly lightGenerationTimeMs = new MetricAccumulator()
   private readonly meshGenerationChunkCount = new MetricAccumulator()
   private readonly meshGenerationPerChunkMs = new MetricAccumulator()
   private readonly meshGenerationTimeMs = new MetricAccumulator()
   private readonly occlusionActiveSlotCount = new MetricAccumulator()
   private readonly occlusionCandidateVisibleChunkCount = new MetricAccumulator()
   private readonly occlusionCulledSlotCount = new MetricAccumulator()
+  private readonly sdfGenerationChunkCount = new MetricAccumulator()
+  private readonly sdfGenerationPerChunkMs = new MetricAccumulator()
+  private readonly sdfGenerationTimeMs = new MetricAccumulator()
   private readonly terrainGenerationChunkCount = new MetricAccumulator()
   private readonly terrainGenerationPerChunkMs = new MetricAccumulator()
   private readonly terrainGenerationTimeMs = new MetricAccumulator()
@@ -462,6 +496,32 @@ export class ProfileRecorder {
     }
   }
 
+  recordSdfGeneration(durationMs: number, chunkCount: number): void {
+    if (!this.isRecordingSession) {
+      return
+    }
+
+    this.sdfGenerationTimeMs.add(durationMs)
+
+    if (chunkCount > 0) {
+      this.sdfGenerationChunkCount.add(chunkCount)
+      this.sdfGenerationPerChunkMs.add(durationMs / chunkCount)
+    }
+  }
+
+  recordLightGeneration(durationMs: number, chunkCount: number): void {
+    if (!this.isRecordingSession) {
+      return
+    }
+
+    this.lightGenerationTimeMs.add(durationMs)
+
+    if (chunkCount > 0) {
+      this.lightGenerationChunkCount.add(chunkCount)
+      this.lightGenerationPerChunkMs.add(durationMs / chunkCount)
+    }
+  }
+
   recordTerrainGeneration(durationMs: number, chunkCount: number): void {
     if (!this.isRecordingSession) {
       return
@@ -513,6 +573,12 @@ export class ProfileRecorder {
               commandCount: this.indirectCommandCount.summary(),
               zeroedCommandCount: this.indirectZeroedCommandCount.summary(),
             },
+      lightGenerationChunkCount: this.lightGenerationChunkCount.summary(),
+      lightGenerationPerChunkMs: this.lightGenerationPerChunkMs.summary(),
+      lightGenerationTimeMs: {
+        ...this.lightGenerationTimeMs.summary(),
+        total: this.lightGenerationTimeMs.totalValue(),
+      },
       occlusion:
         this.occlusionActiveSlotCount.summary().samples === 0
           ? null
@@ -539,6 +605,12 @@ export class ProfileRecorder {
         ...this.meshGenerationTimeMs.summary(),
         total: this.meshGenerationTimeMs.totalValue(),
       },
+      sdfGenerationChunkCount: this.sdfGenerationChunkCount.summary(),
+      sdfGenerationPerChunkMs: this.sdfGenerationPerChunkMs.summary(),
+      sdfGenerationTimeMs: {
+        ...this.sdfGenerationTimeMs.summary(),
+        total: this.sdfGenerationTimeMs.totalValue(),
+      },
       terrainGenerationChunkCount: this.terrainGenerationChunkCount.summary(),
       terrainGenerationPerChunkMs: this.terrainGenerationPerChunkMs.summary(),
       terrainGenerationTimeMs: {
@@ -563,12 +635,18 @@ export class ProfileRecorder {
     this.indirectCommandCount.reset()
     this.indirectZeroedCommandCount.reset()
     this.jsHeapBytes.reset()
+    this.lightGenerationChunkCount.reset()
+    this.lightGenerationPerChunkMs.reset()
+    this.lightGenerationTimeMs.reset()
     this.meshGenerationChunkCount.reset()
     this.meshGenerationPerChunkMs.reset()
     this.meshGenerationTimeMs.reset()
     this.occlusionActiveSlotCount.reset()
     this.occlusionCandidateVisibleChunkCount.reset()
     this.occlusionCulledSlotCount.reset()
+    this.sdfGenerationChunkCount.reset()
+    this.sdfGenerationPerChunkMs.reset()
+    this.sdfGenerationTimeMs.reset()
     this.terrainGenerationChunkCount.reset()
     this.terrainGenerationPerChunkMs.reset()
     this.terrainGenerationTimeMs.reset()

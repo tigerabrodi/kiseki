@@ -75,6 +75,8 @@ describe('ProfileRecorder', () => {
       candidateVisibleChunkCount: 70,
     })
     recorder.recordTerrainGeneration(6, 32)
+    recorder.recordSdfGeneration(3, 32)
+    recorder.recordLightGeneration(4, 32)
     recorder.recordMeshGeneration(8, 32)
     recorder.recordFrame({
       chunkCount: 36,
@@ -203,6 +205,44 @@ describe('ProfileRecorder', () => {
         min: 0.25,
         samples: 1,
       },
+      sdfGenerationTimeMs: {
+        average: 3,
+        max: 3,
+        min: 3,
+        samples: 1,
+        total: 3,
+      },
+      sdfGenerationChunkCount: {
+        average: 32,
+        max: 32,
+        min: 32,
+        samples: 1,
+      },
+      sdfGenerationPerChunkMs: {
+        average: 0.09375,
+        max: 0.09375,
+        min: 0.09375,
+        samples: 1,
+      },
+      lightGenerationTimeMs: {
+        average: 4,
+        max: 4,
+        min: 4,
+        samples: 1,
+        total: 4,
+      },
+      lightGenerationChunkCount: {
+        average: 32,
+        max: 32,
+        min: 32,
+        samples: 1,
+      },
+      lightGenerationPerChunkMs: {
+        average: 0.125,
+        max: 0.125,
+        min: 0.125,
+        samples: 1,
+      },
       terrainGenerationTimeMs: {
         average: 6,
         max: 6,
@@ -262,6 +302,12 @@ describe('ProfileRecorder', () => {
     expect(report?.meshGenerationChunkCount.average).toBe(0)
     expect(report?.meshGenerationPerChunkMs.average).toBe(0)
     expect(report?.meshGenerationTimeMs.total).toBe(0)
+    expect(report?.sdfGenerationChunkCount.average).toBe(0)
+    expect(report?.sdfGenerationPerChunkMs.average).toBe(0)
+    expect(report?.sdfGenerationTimeMs.total).toBe(0)
+    expect(report?.lightGenerationChunkCount.average).toBe(0)
+    expect(report?.lightGenerationPerChunkMs.average).toBe(0)
+    expect(report?.lightGenerationTimeMs.total).toBe(0)
     expect(report?.terrainGenerationChunkCount.average).toBe(0)
     expect(report?.terrainGenerationPerChunkMs.average).toBe(0)
     expect(report?.terrainGenerationTimeMs.total).toBe(0)
@@ -335,6 +381,8 @@ describe('ProfileRecorder', () => {
     expect(formatProfileReport(report!)).toContain(
       'Terrain ms/chunk avg/min/max'
     )
+    expect(formatProfileReport(report!)).toContain('SDF ms/chunk avg/min/max')
+    expect(formatProfileReport(report!)).toContain('Light ms/chunk avg/min/max')
     expect(formatProfileReport(report!)).toContain('Mesh ms/chunk avg/min/max')
     expect(formatProfileReport(report!)).toContain(
       'GPU pool stable after startup: Yes'

@@ -11,27 +11,43 @@ export type GpuPoolRuntimeStats = {
 }
 
 export type GpuAllocationSnapshot = {
+  light: GpuPoolRuntimeStats | null
   mesh: GpuPoolRuntimeStats | null
+  sdf: GpuPoolRuntimeStats | null
   totalBufferCount: number
   totalReservedByteLength: number
   voxel: GpuPoolRuntimeStats | null
 }
 
 type BuildGpuAllocationSnapshotInput = {
-  mesh: GpuPoolRuntimeStats | null
-  voxel: GpuPoolRuntimeStats | null
+  light?: GpuPoolRuntimeStats | null
+  mesh?: GpuPoolRuntimeStats | null
+  sdf?: GpuPoolRuntimeStats | null
+  voxel?: GpuPoolRuntimeStats | null
 }
 
 export function buildGpuAllocationSnapshot(
   input: BuildGpuAllocationSnapshotInput
 ): GpuAllocationSnapshot {
+  const light = input.light ?? null
+  const mesh = input.mesh ?? null
+  const sdf = input.sdf ?? null
+  const voxel = input.voxel ?? null
+
   return {
-    mesh: input.mesh,
+    light,
+    mesh,
+    sdf,
     totalBufferCount:
-      (input.mesh?.bufferCount ?? 0) + (input.voxel?.bufferCount ?? 0),
+      (light?.bufferCount ?? 0) +
+      (mesh?.bufferCount ?? 0) +
+      (sdf?.bufferCount ?? 0) +
+      (voxel?.bufferCount ?? 0),
     totalReservedByteLength:
-      (input.mesh?.reservedByteLength ?? 0) +
-      (input.voxel?.reservedByteLength ?? 0),
-    voxel: input.voxel,
+      (light?.reservedByteLength ?? 0) +
+      (mesh?.reservedByteLength ?? 0) +
+      (sdf?.reservedByteLength ?? 0) +
+      (voxel?.reservedByteLength ?? 0),
+    voxel,
   }
 }

@@ -3,6 +3,7 @@ import type { WebGPURenderer } from 'three/webgpu'
 
 import { CHUNK_VOLUME } from '../voxel/chunk.ts'
 import { chunkKey, type ChunkCoordinates } from '../world/World.ts'
+import type { GpuPoolRuntimeStats } from './buildGpuAllocationSnapshot.ts'
 import {
   createRendererStorageAttribute,
   getWebGpuBackend,
@@ -31,10 +32,13 @@ export type GpuLightMaterialState = {
 
 export class GpuLightSlab {
   private readonly activeSlots = new Set<number>()
+  private allocationCount = 0
   private readonly buffer: GPUBuffer
   private readonly capacityValue: number
   private readonly device: GPUDevice
+  private highWaterCount = 0
   private readonly lightAttribute: THREE.StorageBufferAttribute
+  private releaseCount = 0
   private readonly scratchBuffer: GPUBuffer
 
   constructor(renderer: WebGPURenderer, capacity: number) {
@@ -63,6 +67,10 @@ export class GpuLightSlab {
     return this.activeSlots.size
   }
 
+  activeByteLength(): number {
+    return this.activeCount() * GPU_LIGHT_BUFFER_BYTE_LENGTH * 2
+  }
+
   allocate(
     coords: ChunkCoordinates,
     preferredSlotIndex: number
@@ -78,6 +86,8 @@ export class GpuLightSlab {
     const byteOffset = preferredSlotIndex * GPU_LIGHT_BUFFER_BYTE_LENGTH
 
     this.activeSlots.add(preferredSlotIndex)
+    this.allocationCount += 1
+    this.highWaterCount = Math.max(this.highWaterCount, this.activeCount())
     this.device.queue.writeBuffer(this.buffer, byteOffset, EMPTY_LIGHT_VALUES)
     this.device.queue.writeBuffer(
       this.scratchBuffer,
@@ -114,6 +124,20 @@ export class GpuLightSlab {
     }
   }
 
+  getRuntimeStats(): GpuPoolRuntimeStats {
+    return {
+      activeByteLength: this.activeByteLength(),
+      activeCount: this.activeCount(),
+      allocationCount: this.allocationCount,
+      availableCount: this.capacityValue - this.activeCount(),
+      bufferCount: 2,
+      capacity: this.capacity(),
+      highWaterCount: this.highWaterCount,
+      releaseCount: this.releaseCount,
+      reservedByteLength: this.reservedByteLength(),
+    }
+  }
+
   release(handle: GpuLightBufferHandle): void {
     if (handle.isSlabAllocated !== true) {
       throw new Error(
@@ -122,6 +146,7 @@ export class GpuLightSlab {
     }
 
     this.activeSlots.delete(handle.slotIndex)
+    this.releaseCount += 1
     this.device.queue.writeBuffer(
       this.buffer,
       handle.byteOffset,
