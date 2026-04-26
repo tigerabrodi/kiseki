@@ -123,7 +123,8 @@ export async function createDebugWorldGpuRuntime(
   ])
   const voxelChunkMaterial = createVoxelChunkMaterial(
     atlas,
-    gpuChunkVisibilityCuller.getMaterialState()
+    gpuChunkVisibilityCuller.getMaterialState(),
+    gpuSdfSlab.getMaterialState()
   )
   const voxelMaterialGallery = createVoxelMaterialGallery(atlas)
 

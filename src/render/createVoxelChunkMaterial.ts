@@ -15,7 +15,13 @@ import {
 } from 'three/tsl'
 
 import type { GpuChunkVisibilityMaterialState } from '../gpu/GpuChunkVisibilityCuller.ts'
+import type { GpuSdfMaterialState } from '../gpu/GpuSdfSlab.ts'
 import type { VoxelTextureAtlas } from './loadVoxelTextureAtlas.ts'
+import {
+  SDF_AO_MIN_FACTOR,
+  SDF_AO_NEAR_SURFACE_DISTANCE,
+  SDF_AO_SAMPLE_DISTANCE,
+} from './sdfAmbientOcclusion.ts'
 
 const COORDINATE_MASK = 0x1f
 const MATERIAL_MASK = 0xff
@@ -27,6 +33,7 @@ const MATERIAL_SHIFT = 18
 const X_OVERFLOW_SHIFT = 26
 const Y_OVERFLOW_SHIFT = 27
 const Z_OVERFLOW_SHIFT = 28
+const CHUNK_VOLUME = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE
 
 function getChunkSlotIndex(object: THREE.Object3D | null): number {
   const userData: unknown = object?.userData
@@ -45,9 +52,28 @@ function getChunkSlotIndex(object: THREE.Object3D | null): number {
   return typeof chunkSlotIndex === 'number' ? chunkSlotIndex >>> 0 : 0
 }
 
+function getChunkSdfSlotIndex(object: THREE.Object3D | null): number {
+  const userData: unknown = object?.userData
+
+  if (
+    typeof userData !== 'object' ||
+    userData === null ||
+    !('sdfSlotIndex' in userData)
+  ) {
+    return getChunkSlotIndex(object)
+  }
+
+  const sdfSlotIndex = (userData as { sdfSlotIndex?: unknown }).sdfSlotIndex
+
+  return typeof sdfSlotIndex === 'number'
+    ? sdfSlotIndex >>> 0
+    : getChunkSlotIndex(object)
+}
+
 export function createVoxelChunkMaterial(
   atlas: VoxelTextureAtlas,
-  visibilityState?: GpuChunkVisibilityMaterialState
+  visibilityState?: GpuChunkVisibilityMaterialState,
+  sdfState?: GpuSdfMaterialState
 ): THREE.MeshStandardNodeMaterial {
   const material = new THREE.MeshStandardNodeMaterial()
   const packedVertex = attribute<'uint'>('packedData', 'uint')
@@ -176,6 +202,9 @@ export function createVoxelChunkMaterial(
   const chunkSlotIndexNode = uint(
     uniform(0).onObjectUpdate(({ object }) => getChunkSlotIndex(object))
   )
+  const chunkSdfSlotIndexNode = uint(
+    uniform(0).onObjectUpdate(({ object }) => getChunkSdfSlotIndex(object))
+  )
   const visibilityWordNode =
     visibilityState === undefined
       ? null
@@ -197,19 +226,61 @@ export function createVoxelChunkMaterial(
     isChunkVisible === null
       ? localPosition
       : select(isChunkVisible, localPosition, vec3(0, -1000000, 0))
+  const sdfValuesNode =
+    sdfState === undefined
+      ? null
+      : storage(
+          sdfState.sdfAttribute,
+          'float',
+          sdfState.valueCount
+        ).toReadOnly()
+  const sampleSdfDistance = (samplePosition: THREE.Node<'vec3'>) => {
+    if (sdfValuesNode === null) {
+      return float(SDF_AO_SAMPLE_DISTANCE)
+    }
+
+    const clampedPosition = samplePosition.clamp(0, CHUNK_SIZE - 1)
+    const sampleX = clampedPosition.x.floor().toUint()
+    const sampleY = clampedPosition.y.floor().toUint()
+    const sampleZ = clampedPosition.z.floor().toUint()
+    const localIndex = sampleX
+      .add(sampleY.mul(uint(CHUNK_SIZE)))
+      .add(sampleZ.mul(uint(CHUNK_SIZE * CHUNK_SIZE)))
+    const globalIndex = chunkSdfSlotIndexNode
+      .mul(uint(CHUNK_VOLUME))
+      .add(localIndex)
+
+    return sdfValuesNode.element(globalIndex)
+  }
+  const sdfProbePosition = localPosition.add(
+    localNormal.mul(SDF_AO_SAMPLE_DISTANCE)
+  )
+  const sdfProbeDistance = sampleSdfDistance(sdfProbePosition)
+  const sdfAmbientOcclusion = sdfProbeDistance
+    .abs()
+    .sub(SDF_AO_NEAR_SURFACE_DISTANCE)
+    .div(SDF_AO_SAMPLE_DISTANCE - SDF_AO_NEAR_SURFACE_DISTANCE)
+    .clamp(0, 1)
+    .mul(1 - SDF_AO_MIN_FACTOR)
+    .add(SDF_AO_MIN_FACTOR)
 
   material.positionNode = Fn(() => {
     surfaceUvVarying.assign(surfaceUv)
 
     return localCulledPosition
   })()
-  material.colorNode = basecolorSample.rgb.mul(heightOcclusion)
+  material.colorNode = basecolorSample.rgb
+    .mul(heightOcclusion)
+    .mul(sdfAmbientOcclusion)
   material.normalNode = transformNormalToView(localSurfaceNormal).normalize()
   material.roughnessNode = roughnessSample.r
     .mul(0.9)
     .add(heightSample.r.mul(0.1))
   material.metalnessNode = metalnessSample.r
-  material.aoNode = heightSample.r.mul(0.35).add(float(0.65))
+  material.aoNode = heightSample.r
+    .mul(0.35)
+    .add(float(0.65))
+    .mul(sdfAmbientOcclusion)
 
   return material
 }
