@@ -29,7 +29,7 @@ import {
   formatProfileReport,
   ProfileRecorder,
 } from '../profiling/ProfileRecorder.ts'
-import type { Chunk } from '../voxel/chunk.ts'
+import { CHUNK_SIZE, type Chunk } from '../voxel/chunk.ts'
 import { advanceChunkRevealFactors } from './chunkReveal.ts'
 import { createDebugChunkStreamer } from './createDebugChunkStreamer.ts'
 import { createDebugHudUpdater } from './createDebugHudUpdater.ts'
@@ -51,6 +51,7 @@ import {
   updatePointerHud,
 } from './debugWorldHelpers.ts'
 import { getDebugWorldElements } from './getDebugWorldElements.ts'
+import { getDebugChunkStreamingFocusPosition } from './getDebugChunkStreamingFocusPosition.ts'
 import { installDebugWorldEventHandlers } from './installDebugWorldEventHandlers.ts'
 import { installDebugWorldSurface } from './installDebugWorldSurface.ts'
 import { createGpuMeshCompactionScheduler } from './createGpuMeshCompactionScheduler.ts'
@@ -73,6 +74,8 @@ import { VoxelOverrideStore } from '../world/VoxelOverrideStore.ts'
 import { TerrainGenerator } from '../world/TerrainGenerator.ts'
 import { advanceDebugWorldCamera } from './advanceDebugWorldCamera.ts'
 import * as pfw from './profileFrameWork.ts'
+
+const CHUNK_STREAMING_LEAD_DISTANCE = CHUNK_SIZE * 1.5
 
 export async function startDebugWorld(
   root: HTMLElement
@@ -304,8 +307,8 @@ export async function startDebugWorld(
   controls.pointerSpeed = 0.75
 
   const inputState = createInputState()
-  const previousCameraPosition = initialPosition.clone()
   const currentCameraPosition = initialPosition.clone()
+  const streamingFocusPosition = initialPosition.clone()
 
   getCurrentPlayerMeshSlotIndex = (): number | null => {
     const playerChunk = worldPositionToChunkCoordinates(currentCameraPosition)
@@ -640,7 +643,6 @@ export async function startDebugWorld(
     placeTargetBlock: async () => handleVoxelEdit('place', false),
     setCameraPosition: (x: number, y: number, z: number): void => {
       currentCameraPosition.set(x, y, z)
-      previousCameraPosition.copy(currentCameraPosition)
       camera.position.copy(currentCameraPosition)
       camera.updateMatrixWorld()
       syncStreamedWorld(currentCameraPosition)
@@ -781,14 +783,21 @@ export async function startDebugWorld(
       camera,
       controls,
       currentCameraPosition,
-      frame,
+      frameTimeSeconds: frame.frameTimeSeconds,
       inputState,
-      maxMovementStepsPerFrame: 2,
+      maxMovementDeltaSeconds: 1 / 30,
       movementSpeed: 8,
-      previousCameraPosition,
     })
 
-    syncStreamedWorld(currentCameraPosition)
+    syncStreamedWorld(
+      getDebugChunkStreamingFocusPosition({
+        camera,
+        inputState,
+        leadDistance: CHUNK_STREAMING_LEAD_DISTANCE,
+        position: currentCameraPosition,
+        target: streamingFocusPosition,
+      })
+    )
     advanceChunkRevealFactors(chunkMeshes, frame.frameTimeSeconds)
     updatePointerState()
     gpuVisibilityTracker.cull(camera)

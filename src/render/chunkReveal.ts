@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu'
 
 const CHUNK_REVEAL_USER_DATA_KEY = 'chunkRevealFactor'
 
-export const CHUNK_REVEAL_DURATION_SECONDS = 0.85
+export const CHUNK_REVEAL_DURATION_SECONDS = 0.35
 
 function clamp01(value: number): number {
   return Math.min(Math.max(value, 0), 1)
