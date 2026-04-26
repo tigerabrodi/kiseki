@@ -133,7 +133,11 @@ export function createVoxelChunkMaterial(
       )
     )
   )
-  const wrappedSurfaceUv = surfaceUvVarying.fract()
+  // Keep repeat coordinates in tile space, but derive mips from continuous
+  // UVs so large greedy quads do not get chunk-sized LOD bands.
+  const sampleSurfaceUv = surfaceUvVarying.fract()
+  const sampleSurfaceUvGradX = surfaceUvVarying.dFdx()
+  const sampleSurfaceUvGradY = surfaceUvVarying.dFdy()
   const localNormal = select(
     isPx,
     vec3(1, 0, 0),
@@ -168,19 +172,24 @@ export function createVoxelChunkMaterial(
 
   const basecolorSample = textureNode(atlas.basecolor)
     .depth(materialLayer)
-    .sample(wrappedSurfaceUv)
+    .grad(sampleSurfaceUvGradX, sampleSurfaceUvGradY)
+    .sample(sampleSurfaceUv)
   const normalSample = textureNode(atlas.normal)
     .depth(materialLayer)
-    .sample(wrappedSurfaceUv)
+    .grad(sampleSurfaceUvGradX, sampleSurfaceUvGradY)
+    .sample(sampleSurfaceUv)
   const roughnessSample = textureNode(atlas.roughness)
     .depth(materialLayer)
-    .sample(wrappedSurfaceUv)
+    .grad(sampleSurfaceUvGradX, sampleSurfaceUvGradY)
+    .sample(sampleSurfaceUv)
   const metalnessSample = textureNode(atlas.metalness)
     .depth(materialLayer)
-    .sample(wrappedSurfaceUv)
+    .grad(sampleSurfaceUvGradX, sampleSurfaceUvGradY)
+    .sample(sampleSurfaceUv)
   const heightSample = textureNode(atlas.height)
     .depth(materialLayer)
-    .sample(wrappedSurfaceUv)
+    .grad(sampleSurfaceUvGradX, sampleSurfaceUvGradY)
+    .sample(sampleSurfaceUv)
 
   const tangentSpaceNormal = normalSample.rgb.mul(2).sub(1)
   const localSurfaceNormal = tangent
@@ -202,6 +211,9 @@ export function createVoxelChunkMaterial(
     uniform(0).onObjectUpdate(({ object }) =>
       getObjectVoxelMaterialDebugModeId(object)
     )
+  )
+  const isFinalMaterialDebugMode = materialDebugModeNode.equal(
+    uint(getVoxelMaterialDebugModeId('final'))
   )
   const visibilityWordNode =
     visibilityState === undefined
@@ -250,6 +262,14 @@ export function createVoxelChunkMaterial(
       .add(sampleY.mul(uint(CHUNK_SIZE)))
       .add(sampleZ.mul(uint(CHUNK_SIZE * CHUNK_SIZE)))
   }
+  const isWithinChunkBounds = (samplePosition: THREE.Node<'vec3'>) =>
+    samplePosition.x
+      .greaterThanEqual(float(0))
+      .and(samplePosition.x.lessThan(float(CHUNK_SIZE)))
+      .and(samplePosition.y.greaterThanEqual(float(0)))
+      .and(samplePosition.y.lessThan(float(CHUNK_SIZE)))
+      .and(samplePosition.z.greaterThanEqual(float(0)))
+      .and(samplePosition.z.lessThan(float(CHUNK_SIZE)))
   const sampleSdfDistance = (samplePosition: THREE.Node<'vec3'>) => {
     if (sdfValuesNode === null) {
       return float(SDF_AO_SAMPLE_DISTANCE)
@@ -260,7 +280,13 @@ export function createVoxelChunkMaterial(
       .mul(uint(CHUNK_VOLUME))
       .add(localIndex)
 
-    return sdfValuesNode.element(globalIndex)
+    // Until SDF sampling can see neighbor chunks, out-of-bounds probes should
+    // mean "open space" instead of clamping to a fake chunk-edge surface.
+    return select(
+      isWithinChunkBounds(samplePosition),
+      sdfValuesNode.element(globalIndex),
+      float(SDF_SOFT_SHADOW_OPEN_DISTANCE)
+    )
   }
   const sampleLightLevel = (samplePosition: THREE.Node<'vec3'>) => {
     if (lightValuesNode === null) {
@@ -320,6 +346,11 @@ export function createVoxelChunkMaterial(
     .mul(sdfAmbientOcclusion)
     .mul(sdfSoftShadow)
     .mul(voxelLightFactor)
+  const finalAmbientOcclusion = heightSample.r
+    .mul(0.35)
+    .add(float(0.65))
+    .mul(sdfAmbientOcclusion)
+    .mul(sdfSoftShadow)
   const debugColor = select(
     materialDebugModeNode.equal(uint(getVoxelMaterialDebugModeId('basecolor'))),
     basecolorSample.rgb,
@@ -353,23 +384,26 @@ export function createVoxelChunkMaterial(
       )
     )
   )
+  const materialColor = select(isFinalMaterialDebugMode, finalColor, vec3(0))
+  const materialEmissive = select(isFinalMaterialDebugMode, vec3(0), debugColor)
 
   material.positionNode = Fn(() => {
     surfaceUvVarying.assign(surfaceUv)
 
     return localCulledPosition
   })()
-  material.colorNode = debugColor
+  material.colorNode = materialColor
+  material.emissiveNode = materialEmissive
   material.normalNode = transformNormalToView(localSurfaceNormal).normalize()
   material.roughnessNode = roughnessSample.r
     .mul(0.9)
     .add(heightSample.r.mul(0.1))
   material.metalnessNode = metalnessSample.r
-  material.aoNode = heightSample.r
-    .mul(0.35)
-    .add(float(0.65))
-    .mul(sdfAmbientOcclusion)
-    .mul(sdfSoftShadow)
+  material.aoNode = select(
+    isFinalMaterialDebugMode,
+    finalAmbientOcclusion,
+    float(1)
+  )
 
   return material
 }
