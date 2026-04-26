@@ -6,6 +6,7 @@ import {
   type KisekiDebugStats,
   type KisekiGpuMeshCompactionInfo,
   type KisekiGpuIndirectDrawInfo,
+  type KisekiGpuLightInfo,
   type KisekiGpuOcclusionInfo,
   type KisekiGpuPipelineInfo,
   type KisekiGpuVisibilityInfo,
@@ -14,7 +15,9 @@ import {
 } from '../debug/installKisekiDebugSurface.ts'
 import type { GpuChunkMeshCache } from '../gpu/GpuChunkMeshCache.ts'
 import type { GpuChunkSdfCache } from '../gpu/GpuChunkSdfCache.ts'
+import type { GpuChunkLightCache } from '../gpu/GpuChunkLightCache.ts'
 import { getGpuChunkMeshInfo, readGpuChunkMesh } from '../gpu/GpuChunkMesher.ts'
+import type { GpuLightGenerator } from '../gpu/GpuLightGenerator.ts'
 import type { GpuSdfGenerator } from '../gpu/GpuSdfGenerator.ts'
 import type { GpuChunkVoxelCache } from '../gpu/GpuChunkVoxelCache.ts'
 import {
@@ -50,6 +53,8 @@ type InstallDebugWorldSurfaceOptions = {
   getGpuAllocationInfo: () => KisekiGpuAllocationInfo
   getGpuDevice: () => GPUDevice | null
   getGpuIndirectDrawInfo: () => Promise<KisekiGpuIndirectDrawInfo>
+  getGpuLightCache: () => GpuChunkLightCache | null
+  getGpuLightGenerator: () => GpuLightGenerator | null
   getGpuMeshCompactionInfo: () => KisekiGpuMeshCompactionInfo
   getGpuOcclusionInfo: () => Promise<KisekiGpuOcclusionInfo>
   getGpuSdfCache: () => GpuChunkSdfCache | null
@@ -143,6 +148,20 @@ export function installDebugWorldSurface(
         options.getGpuVoxelCache()?.getBuffer({ x, y, z })
       ),
     getGpuIndirectDrawInfo: options.getGpuIndirectDrawInfo,
+    getGpuLightInfo: async (
+      x: number,
+      y: number,
+      z: number
+    ): Promise<KisekiGpuLightInfo> => {
+      const lightHandle = options.getGpuLightCache()?.getBuffer({ x, y, z })
+      const lightGenerator = options.getGpuLightGenerator()
+
+      if (lightHandle === undefined || lightGenerator === null) {
+        return null
+      }
+
+      return lightGenerator.readChunkInfo(lightHandle)
+    },
     getGpuMeshCompactionInfo: options.getGpuMeshCompactionInfo,
     getGpuOcclusionInfo: options.getGpuOcclusionInfo,
     getGpuSdfInfo: async (x: number, y: number, z: number) => {

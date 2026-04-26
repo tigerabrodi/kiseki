@@ -15,7 +15,9 @@ import {
 } from 'three/tsl'
 
 import type { GpuChunkVisibilityMaterialState } from '../gpu/GpuChunkVisibilityCuller.ts'
+import type { GpuLightMaterialState } from '../gpu/GpuLightSlab.ts'
 import type { GpuSdfMaterialState } from '../gpu/GpuSdfSlab.ts'
+import { GPU_LIGHT_MAX_LEVEL } from '../gpu/lightStorageCodec.ts'
 import type { VoxelTextureAtlas } from './loadVoxelTextureAtlas.ts'
 import {
   SDF_AO_MIN_FACTOR,
@@ -30,6 +32,7 @@ import {
   SDF_SOFT_SHADOW_NEAR_SAMPLE_DISTANCE,
   SDF_SOFT_SHADOW_OPEN_DISTANCE,
 } from './sdfSoftShadow.ts'
+import { VOXEL_LIGHT_MIN_FACTOR } from './voxelLightShading.ts'
 
 const COORDINATE_MASK = 0x1f
 const MATERIAL_MASK = 0xff
@@ -78,10 +81,30 @@ function getChunkSdfSlotIndex(object: THREE.Object3D | null): number {
     : getChunkSlotIndex(object)
 }
 
+function getChunkLightSlotIndex(object: THREE.Object3D | null): number {
+  const userData: unknown = object?.userData
+
+  if (
+    typeof userData !== 'object' ||
+    userData === null ||
+    !('lightSlotIndex' in userData)
+  ) {
+    return getChunkSlotIndex(object)
+  }
+
+  const lightSlotIndex = (userData as { lightSlotIndex?: unknown })
+    .lightSlotIndex
+
+  return typeof lightSlotIndex === 'number'
+    ? lightSlotIndex >>> 0
+    : getChunkSlotIndex(object)
+}
+
 export function createVoxelChunkMaterial(
   atlas: VoxelTextureAtlas,
   visibilityState?: GpuChunkVisibilityMaterialState,
-  sdfState?: GpuSdfMaterialState
+  sdfState?: GpuSdfMaterialState,
+  lightState?: GpuLightMaterialState
 ): THREE.MeshStandardNodeMaterial {
   const material = new THREE.MeshStandardNodeMaterial()
   const packedVertex = attribute<'uint'>('packedData', 'uint')
@@ -213,6 +236,9 @@ export function createVoxelChunkMaterial(
   const chunkSdfSlotIndexNode = uint(
     uniform(0).onObjectUpdate(({ object }) => getChunkSdfSlotIndex(object))
   )
+  const chunkLightSlotIndexNode = uint(
+    uniform(0).onObjectUpdate(({ object }) => getChunkLightSlotIndex(object))
+  )
   const visibilityWordNode =
     visibilityState === undefined
       ? null
@@ -242,23 +268,47 @@ export function createVoxelChunkMaterial(
           'float',
           sdfState.valueCount
         ).toReadOnly()
+  const lightValuesNode =
+    lightState === undefined
+      ? null
+      : storage(
+          lightState.lightAttribute,
+          'uint',
+          lightState.valueCount
+        ).toReadOnly()
+  const getLocalVoxelIndex = (samplePosition: THREE.Node<'vec3'>) => {
+    const clampedPosition = samplePosition.clamp(0, CHUNK_SIZE - 1)
+    const sampleX = clampedPosition.x.floor().toUint()
+    const sampleY = clampedPosition.y.floor().toUint()
+    const sampleZ = clampedPosition.z.floor().toUint()
+
+    return sampleX
+      .add(sampleY.mul(uint(CHUNK_SIZE)))
+      .add(sampleZ.mul(uint(CHUNK_SIZE * CHUNK_SIZE)))
+  }
   const sampleSdfDistance = (samplePosition: THREE.Node<'vec3'>) => {
     if (sdfValuesNode === null) {
       return float(SDF_AO_SAMPLE_DISTANCE)
     }
 
-    const clampedPosition = samplePosition.clamp(0, CHUNK_SIZE - 1)
-    const sampleX = clampedPosition.x.floor().toUint()
-    const sampleY = clampedPosition.y.floor().toUint()
-    const sampleZ = clampedPosition.z.floor().toUint()
-    const localIndex = sampleX
-      .add(sampleY.mul(uint(CHUNK_SIZE)))
-      .add(sampleZ.mul(uint(CHUNK_SIZE * CHUNK_SIZE)))
+    const localIndex = getLocalVoxelIndex(samplePosition)
     const globalIndex = chunkSdfSlotIndexNode
       .mul(uint(CHUNK_VOLUME))
       .add(localIndex)
 
     return sdfValuesNode.element(globalIndex)
+  }
+  const sampleLightLevel = (samplePosition: THREE.Node<'vec3'>) => {
+    if (lightValuesNode === null) {
+      return uint(GPU_LIGHT_MAX_LEVEL)
+    }
+
+    const localIndex = getLocalVoxelIndex(samplePosition)
+    const globalIndex = chunkLightSlotIndexNode
+      .mul(uint(CHUNK_VOLUME))
+      .add(localIndex)
+
+    return lightValuesNode.element(globalIndex)
   }
   const sdfProbePosition = localPosition.add(
     localNormal.mul(SDF_AO_SAMPLE_DISTANCE)
@@ -294,6 +344,13 @@ export function createVoxelChunkMaterial(
     .clamp(0, 1)
     .mul(1 - SDF_SOFT_SHADOW_MIN_FACTOR)
     .add(SDF_SOFT_SHADOW_MIN_FACTOR)
+  const lightSamplePosition = localPosition.add(localNormal.mul(0.01))
+  const voxelLightFactor = sampleLightLevel(lightSamplePosition)
+    .toFloat()
+    .div(GPU_LIGHT_MAX_LEVEL)
+    .clamp(0, 1)
+    .mul(1 - VOXEL_LIGHT_MIN_FACTOR)
+    .add(VOXEL_LIGHT_MIN_FACTOR)
 
   material.positionNode = Fn(() => {
     surfaceUvVarying.assign(surfaceUv)
@@ -304,6 +361,7 @@ export function createVoxelChunkMaterial(
     .mul(heightOcclusion)
     .mul(sdfAmbientOcclusion)
     .mul(sdfSoftShadow)
+    .mul(voxelLightFactor)
   material.normalNode = transformNormalToView(localSurfaceNormal).normalize()
   material.roughnessNode = roughnessSample.r
     .mul(0.9)

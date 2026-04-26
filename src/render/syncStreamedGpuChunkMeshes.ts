@@ -20,6 +20,7 @@ type SyncStreamedGpuChunkMeshesOptions = {
   chunkMeshMap: Map<string, DisposableMesh>
   chunkMeshSlotMap: Map<number, DisposableMesh>
   gpuVoxelCache: GpuChunkVoxelCache
+  getLightSlotIndex?: (coords: ChunkCoordinates) => number | null
   getSdfSlotIndex?: (coords: ChunkCoordinates) => number | null
   material: THREE.MeshStandardNodeMaterial
   update: Pick<ChunkStreamUpdate, 'loaded' | 'unloaded'>
@@ -76,6 +77,7 @@ function addChunkRenderMesh(
   worldGroup: THREE.Group,
   chunkMeshCache: GpuChunkMeshCache,
   chunkMeshSlotMap: Map<number, DisposableMesh>,
+  getLightSlotIndex: ((coords: ChunkCoordinates) => number | null) | undefined,
   getSdfSlotIndex: ((coords: ChunkCoordinates) => number | null) | undefined,
   material: THREE.MeshStandardNodeMaterial,
   entry: ChunkStreamUpdate['loaded'][number]
@@ -105,6 +107,8 @@ function addChunkRenderMesh(
 
   chunkMesh.position.set(origin.x, origin.y, origin.z)
   chunkMesh.userData.chunkSlotIndex = chunkHandle.slotIndex
+  chunkMesh.userData.lightSlotIndex =
+    getLightSlotIndex?.(entry.coords) ?? chunkHandle.slotIndex
   chunkMesh.userData.sdfSlotIndex =
     getSdfSlotIndex?.(entry.coords) ?? chunkHandle.slotIndex
   chunkMesh.visible = true
@@ -133,6 +137,7 @@ export function syncStreamedGpuChunkMeshes(
       options.worldGroup,
       options.chunkMeshCache,
       options.chunkMeshSlotMap,
+      options.getLightSlotIndex,
       options.getSdfSlotIndex,
       options.material,
       entry

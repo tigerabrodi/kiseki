@@ -2,6 +2,7 @@ import type { WebGPURenderer } from 'three/webgpu'
 import type * as THREE from 'three/webgpu'
 
 import { GpuChunkIndirectDrawCuller } from '../gpu/GpuChunkIndirectDrawCuller.ts'
+import { GpuChunkLightCache } from '../gpu/GpuChunkLightCache.ts'
 import { GpuChunkMeshCache } from '../gpu/GpuChunkMeshCache.ts'
 import { GpuChunkMesher } from '../gpu/GpuChunkMesher.ts'
 import { GpuChunkMeshSlab } from '../gpu/GpuChunkMeshSlab.ts'
@@ -9,6 +10,8 @@ import { GpuChunkOcclusionCuller } from '../gpu/GpuChunkOcclusionCuller.ts'
 import { GpuChunkSdfCache } from '../gpu/GpuChunkSdfCache.ts'
 import { GpuChunkVisibilityCuller } from '../gpu/GpuChunkVisibilityCuller.ts'
 import { GpuChunkVoxelCache } from '../gpu/GpuChunkVoxelCache.ts'
+import { GpuLightGenerator } from '../gpu/GpuLightGenerator.ts'
+import { GpuLightSlab } from '../gpu/GpuLightSlab.ts'
 import { GpuSdfGenerator } from '../gpu/GpuSdfGenerator.ts'
 import { GpuSdfSlab } from '../gpu/GpuSdfSlab.ts'
 import { GpuTerrainGenerator } from '../gpu/GpuTerrainGenerator.ts'
@@ -26,6 +29,7 @@ import { loadVoxelTextureAtlas } from './loadVoxelTextureAtlas.ts'
 export type DebugWorldGpuRuntime = {
   disposeHdrEnvironment: () => void
   gpuChunkIndirectDrawCuller: GpuChunkIndirectDrawCuller
+  gpuChunkLightCache: GpuChunkLightCache
   gpuChunkMesher: GpuChunkMesher
   gpuChunkMeshCache: GpuChunkMeshCache
   gpuChunkMeshSlab: GpuChunkMeshSlab
@@ -33,6 +37,8 @@ export type DebugWorldGpuRuntime = {
   gpuChunkSdfCache: GpuChunkSdfCache
   gpuChunkVisibilityCuller: GpuChunkVisibilityCuller
   gpuDevice: GPUDevice
+  gpuLightGenerator: GpuLightGenerator
+  gpuLightSlab: GpuLightSlab
   gpuSdfGenerator: GpuSdfGenerator
   gpuSdfSlab: GpuSdfSlab
   gpuTerrainGenerator: GpuTerrainGenerator
@@ -65,7 +71,12 @@ export async function createDebugWorldGpuRuntime(
     seed: 'kiseki',
   })
   const gpuSdfGenerator = new GpuSdfGenerator(gpuDevice)
+  const gpuLightGenerator = new GpuLightGenerator(gpuDevice)
   const gpuSdfSlab = new GpuSdfSlab(
+    options.renderer,
+    options.maxRetainedChunkCount
+  )
+  const gpuLightSlab = new GpuLightSlab(
     options.renderer,
     options.maxRetainedChunkCount
   )
@@ -117,6 +128,20 @@ export async function createDebugWorldGpuRuntime(
     },
     (handle) => gpuSdfSlab.release(handle)
   )
+  const gpuChunkLightCache = new GpuChunkLightCache(
+    (entry) => {
+      const voxelHandle = gpuVoxelCache.getBuffer(entry.coords)
+
+      if (voxelHandle === undefined) {
+        throw new Error(
+          `Missing GPU voxel buffer for light chunk ${chunkKey(entry.coords)}`
+        )
+      }
+
+      return gpuLightSlab.allocate(entry.coords, voxelHandle.slotIndex)
+    },
+    (handle) => gpuLightSlab.release(handle)
+  )
   const [atlas, hdrEnvironment] = await Promise.all([
     loadVoxelTextureAtlas(options.renderer),
     loadHdrEnvironment(options.renderer),
@@ -124,7 +149,8 @@ export async function createDebugWorldGpuRuntime(
   const voxelChunkMaterial = createVoxelChunkMaterial(
     atlas,
     gpuChunkVisibilityCuller.getMaterialState(),
-    gpuSdfSlab.getMaterialState()
+    gpuSdfSlab.getMaterialState(),
+    gpuLightSlab.getMaterialState()
   )
   const voxelMaterialGallery = createVoxelMaterialGallery(atlas)
 
@@ -135,6 +161,7 @@ export async function createDebugWorldGpuRuntime(
   return {
     disposeHdrEnvironment: hdrEnvironment.dispose,
     gpuChunkIndirectDrawCuller,
+    gpuChunkLightCache,
     gpuChunkMesher,
     gpuChunkMeshCache,
     gpuChunkMeshSlab,
@@ -142,6 +169,8 @@ export async function createDebugWorldGpuRuntime(
     gpuChunkSdfCache,
     gpuChunkVisibilityCuller,
     gpuDevice,
+    gpuLightGenerator,
+    gpuLightSlab,
     gpuSdfGenerator,
     gpuSdfSlab,
     gpuTerrainGenerator,

@@ -7,12 +7,15 @@ import type { KisekiDebugStats } from '../debug/installKisekiDebugSurface.ts'
 import { getGpuAllocationSnapshot } from '../gpu/getGpuAllocationSnapshot.ts'
 import type { GpuChunkMeshCache } from '../gpu/GpuChunkMeshCache.ts'
 import type { GpuChunkIndirectDrawCuller } from '../gpu/GpuChunkIndirectDrawCuller.ts'
+import type { GpuChunkLightCache } from '../gpu/GpuChunkLightCache.ts'
 import type { GpuChunkMeshSlab } from '../gpu/GpuChunkMeshSlab.ts'
 import type { GpuChunkMesher } from '../gpu/GpuChunkMesher.ts'
 import type { GpuChunkOcclusionCuller } from '../gpu/GpuChunkOcclusionCuller.ts'
 import type { GpuChunkSdfCache } from '../gpu/GpuChunkSdfCache.ts'
 import type { GpuChunkVoxelCache } from '../gpu/GpuChunkVoxelCache.ts'
 import type { GpuChunkVisibilityCuller } from '../gpu/GpuChunkVisibilityCuller.ts'
+import type { GpuLightGenerator } from '../gpu/GpuLightGenerator.ts'
+import type { GpuLightSlab } from '../gpu/GpuLightSlab.ts'
 import type { GpuSdfGenerator } from '../gpu/GpuSdfGenerator.ts'
 import type { GpuSdfSlab } from '../gpu/GpuSdfSlab.ts'
 import type { GpuTerrainGenerator } from '../gpu/GpuTerrainGenerator.ts'
@@ -52,6 +55,10 @@ import { installDebugWorldEventHandlers } from './installDebugWorldEventHandlers
 import { installDebugWorldSurface } from './installDebugWorldSurface.ts'
 import { createGpuMeshCompactionScheduler } from './createGpuMeshCompactionScheduler.ts'
 import { setupInitialCameraPose } from './setupInitialCameraPose.ts'
+import {
+  regenerateGpuLightChunks,
+  syncStreamedGpuLightBuffers,
+} from './syncStreamedGpuLightBuffers.ts'
 import {
   regenerateGpuSdfChunks,
   syncStreamedGpuSdfBuffers,
@@ -139,12 +146,15 @@ export async function startDebugWorld(
   let disposeHdrEnvironment = (): void => {}
   let gpuDevice: GPUDevice | null = null
   let gpuChunkIndirectDrawCuller: GpuChunkIndirectDrawCuller | null = null
+  let gpuChunkLightCache: GpuChunkLightCache | null = null
   let gpuChunkMesher: GpuChunkMesher | null = null
   let gpuChunkMeshCache: GpuChunkMeshCache | null = null
   let gpuChunkMeshSlab: GpuChunkMeshSlab | null = null
   let gpuChunkOcclusionCuller: GpuChunkOcclusionCuller | null = null
   let gpuChunkSdfCache: GpuChunkSdfCache | null = null
   let gpuChunkVisibilityCuller: GpuChunkVisibilityCuller | null = null
+  let gpuLightGenerator: GpuLightGenerator | null = null
+  let gpuLightSlab: GpuLightSlab | null = null
   let gpuSdfGenerator: GpuSdfGenerator | null = null
   let gpuSdfSlab: GpuSdfSlab | null = null
   let gpuTerrainGenerator: GpuTerrainGenerator | null = null
@@ -225,6 +235,8 @@ export async function startDebugWorld(
       chunkMeshSlotMap,
       chunkMesher: activeGpuChunkMesher,
       chunkMeshMap,
+      getLightSlotIndex: (coords) =>
+        gpuChunkLightCache?.getBuffer(coords)?.slotIndex ?? null,
       getSdfSlotIndex: (coords) =>
         gpuChunkSdfCache?.getBuffer(coords)?.slotIndex ?? null,
       gpuVoxelCache: activeGpuVoxelCache,
@@ -267,6 +279,12 @@ export async function startDebugWorld(
       syncStreamedGpuSdfBuffers({
         gpuSdfCache: gpuChunkSdfCache,
         gpuSdfGenerator,
+        gpuVoxelCache,
+        update: streamUpdate,
+      })
+      syncStreamedGpuLightBuffers({
+        gpuLightCache: gpuChunkLightCache,
+        gpuLightGenerator,
         gpuVoxelCache,
         update: streamUpdate,
       })
@@ -536,6 +554,12 @@ export async function startDebugWorld(
           gpuSdfGenerator,
           gpuVoxelCache,
         })
+        regenerateGpuLightChunks({
+          chunkCoords: result.touchedChunks,
+          gpuLightCache: gpuChunkLightCache,
+          gpuLightGenerator,
+          gpuVoxelCache,
+        })
         gpuOcclusionController.syncGraph()
         gpuVisibilityTracker.cull(camera, true)
         gpuMeshCompactionScheduler.schedule()
@@ -613,6 +637,8 @@ export async function startDebugWorld(
     getGpuAllocationInfo: () => captureGpuAllocationSnapshot(),
     getGpuDevice: () => gpuDevice,
     getGpuIndirectDrawInfo: () => gpuIndirectDrawProfileSampler.readInfo(),
+    getGpuLightCache: () => gpuChunkLightCache,
+    getGpuLightGenerator: () => gpuLightGenerator,
     getGpuMeshCompactionInfo: () =>
       gpuChunkMeshSlab?.getCompactionInfo() ?? null,
     getGpuOcclusionInfo: async () =>
@@ -687,12 +713,15 @@ export async function startDebugWorld(
     disposeChunkMeshPool(chunkMeshSlotMap)
     gpuChunkMeshCache?.dispose()
     gpuChunkMeshSlab?.dispose()
+    gpuChunkLightCache?.dispose()
     gpuChunkIndirectDrawCuller?.destroy()
     gpuChunkOcclusionCuller?.destroy()
     gpuChunkSdfCache?.dispose()
     gpuChunkVisibilityCuller?.destroy()
     voxelMaterialGallery?.dispose()
     gpuChunkMesher?.destroy()
+    gpuLightGenerator?.destroy()
+    gpuLightSlab?.dispose()
     gpuSdfGenerator?.destroy()
     gpuSdfSlab?.dispose()
     gpuTerrainGenerator?.destroy()
@@ -723,9 +752,12 @@ export async function startDebugWorld(
     gpuChunkMeshSlab = gpuRuntime.gpuChunkMeshSlab
     gpuChunkVisibilityCuller = gpuRuntime.gpuChunkVisibilityCuller
     gpuChunkOcclusionCuller = gpuRuntime.gpuChunkOcclusionCuller
+    gpuChunkLightCache = gpuRuntime.gpuChunkLightCache
     gpuChunkSdfCache = gpuRuntime.gpuChunkSdfCache
     gpuChunkIndirectDrawCuller = gpuRuntime.gpuChunkIndirectDrawCuller
     gpuChunkMeshCache = gpuRuntime.gpuChunkMeshCache
+    gpuLightGenerator = gpuRuntime.gpuLightGenerator
+    gpuLightSlab = gpuRuntime.gpuLightSlab
     gpuSdfGenerator = gpuRuntime.gpuSdfGenerator
     gpuSdfSlab = gpuRuntime.gpuSdfSlab
     voxelChunkMaterial = gpuRuntime.voxelChunkMaterial
