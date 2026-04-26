@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu'
 
 import type { GpuChunkMeshHandle } from '../gpu/GpuChunkMesher.ts'
 import { CHUNK_SIZE } from '../voxel/chunk.ts'
+import { setChunkRenderSlotIndices } from './chunkRenderSlotUserData.ts'
 
 export type GpuChunkRenderMesh = {
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardNodeMaterial>
@@ -41,7 +42,7 @@ export function createGpuChunkRenderMesh(
 
   const mesh = new THREE.Mesh(geometry, material)
   mesh.frustumCulled = false
-  mesh.userData.chunkSlotIndex = handle.slotIndex
+  setChunkRenderSlotIndices(mesh, { chunkSlotIndex: handle.slotIndex })
 
   return { mesh }
 }

@@ -18,6 +18,11 @@ import type { GpuChunkVisibilityMaterialState } from '../gpu/GpuChunkVisibilityC
 import type { GpuLightMaterialState } from '../gpu/GpuLightSlab.ts'
 import type { GpuSdfMaterialState } from '../gpu/GpuSdfSlab.ts'
 import { GPU_LIGHT_MAX_LEVEL } from '../gpu/lightStorageCodec.ts'
+import {
+  getChunkLightSlotIndex,
+  getChunkSdfSlotIndex,
+  getChunkSlotIndex,
+} from './chunkRenderSlotUserData.ts'
 import type { VoxelTextureAtlas } from './loadVoxelTextureAtlas.ts'
 import {
   SDF_AO_MIN_FACTOR,
@@ -45,60 +50,6 @@ const X_OVERFLOW_SHIFT = 26
 const Y_OVERFLOW_SHIFT = 27
 const Z_OVERFLOW_SHIFT = 28
 const CHUNK_VOLUME = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE
-
-function getChunkSlotIndex(object: THREE.Object3D | null): number {
-  const userData: unknown = object?.userData
-
-  if (
-    typeof userData !== 'object' ||
-    userData === null ||
-    !('chunkSlotIndex' in userData)
-  ) {
-    return 0
-  }
-
-  const chunkSlotIndex = (userData as { chunkSlotIndex?: unknown })
-    .chunkSlotIndex
-
-  return typeof chunkSlotIndex === 'number' ? chunkSlotIndex >>> 0 : 0
-}
-
-function getChunkSdfSlotIndex(object: THREE.Object3D | null): number {
-  const userData: unknown = object?.userData
-
-  if (
-    typeof userData !== 'object' ||
-    userData === null ||
-    !('sdfSlotIndex' in userData)
-  ) {
-    return getChunkSlotIndex(object)
-  }
-
-  const sdfSlotIndex = (userData as { sdfSlotIndex?: unknown }).sdfSlotIndex
-
-  return typeof sdfSlotIndex === 'number'
-    ? sdfSlotIndex >>> 0
-    : getChunkSlotIndex(object)
-}
-
-function getChunkLightSlotIndex(object: THREE.Object3D | null): number {
-  const userData: unknown = object?.userData
-
-  if (
-    typeof userData !== 'object' ||
-    userData === null ||
-    !('lightSlotIndex' in userData)
-  ) {
-    return getChunkSlotIndex(object)
-  }
-
-  const lightSlotIndex = (userData as { lightSlotIndex?: unknown })
-    .lightSlotIndex
-
-  return typeof lightSlotIndex === 'number'
-    ? lightSlotIndex >>> 0
-    : getChunkSlotIndex(object)
-}
 
 export function createVoxelChunkMaterial(
   atlas: VoxelTextureAtlas,

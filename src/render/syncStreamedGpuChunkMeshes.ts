@@ -7,6 +7,7 @@ import { remeshGpuChunkAtCoords } from '../gpu/remeshGpuChunkAtCoords.ts'
 import type { ChunkStreamUpdate } from '../world/ChunkStreamer.ts'
 import { chunkKey, chunkOrigin, type ChunkCoordinates } from '../world/World.ts'
 import { getChunkCoordsWithCardinalNeighbors } from '../world/worldVoxelCoordinates.ts'
+import { setChunkRenderSlotIndices } from './chunkRenderSlotUserData.ts'
 import { createGpuChunkRenderMesh } from './createGpuChunkRenderMesh.ts'
 
 type DisposableMesh = THREE.Mesh<
@@ -106,11 +107,11 @@ function addChunkRenderMesh(
   }
 
   chunkMesh.position.set(origin.x, origin.y, origin.z)
-  chunkMesh.userData.chunkSlotIndex = chunkHandle.slotIndex
-  chunkMesh.userData.lightSlotIndex =
-    getLightSlotIndex?.(entry.coords) ?? chunkHandle.slotIndex
-  chunkMesh.userData.sdfSlotIndex =
-    getSdfSlotIndex?.(entry.coords) ?? chunkHandle.slotIndex
+  setChunkRenderSlotIndices(chunkMesh, {
+    chunkSlotIndex: chunkHandle.slotIndex,
+    lightSlotIndex: getLightSlotIndex?.(entry.coords),
+    sdfSlotIndex: getSdfSlotIndex?.(entry.coords),
+  })
   chunkMesh.visible = true
   worldGroup.add(chunkMesh)
   chunkMeshMap.set(key, chunkMesh)
