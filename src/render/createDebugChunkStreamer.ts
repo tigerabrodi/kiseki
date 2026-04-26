@@ -3,7 +3,7 @@ import { ChunkStreamer } from '../world/ChunkStreamer.ts'
 
 const DEBUG_CHUNK_LOAD_RADIUS = { x: 4, y: 1, z: 4 } as const
 const DEBUG_CHUNK_UNLOAD_BUFFER = { x: 1, y: 1, z: 1 } as const
-const DEBUG_CHUNK_LOADS_PER_FRAME = 3
+const DEBUG_CHUNK_LOADS_PER_FRAME = 1
 
 export function createDebugChunkStreamer(): ChunkStreamer {
   return new ChunkStreamer({

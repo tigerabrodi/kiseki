@@ -29,7 +29,7 @@ import {
   formatProfileReport,
   ProfileRecorder,
 } from '../profiling/ProfileRecorder.ts'
-import { CHUNK_SIZE, type Chunk } from '../voxel/chunk.ts'
+import type { Chunk } from '../voxel/chunk.ts'
 import { advanceChunkRevealFactors } from './chunkReveal.ts'
 import { createDebugChunkStreamer } from './createDebugChunkStreamer.ts'
 import { createDebugHudUpdater } from './createDebugHudUpdater.ts'
@@ -75,7 +75,7 @@ import { TerrainGenerator } from '../world/TerrainGenerator.ts'
 import { advanceDebugWorldCamera } from './advanceDebugWorldCamera.ts'
 import * as pfw from './profileFrameWork.ts'
 
-const CHUNK_STREAMING_LEAD_DISTANCE = CHUNK_SIZE * 2.5
+const CHUNK_STREAMING_LEAD_DISTANCE = 0
 const GPU_TIMESTAMP_QUERY_PARAM = 'gpu-timestamps'
 
 export async function startDebugWorld(

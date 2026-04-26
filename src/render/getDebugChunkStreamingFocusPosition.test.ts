@@ -27,6 +27,24 @@ describe('getDebugChunkStreamingFocusPosition', () => {
     ).toEqual([10, 20, 30])
   })
 
+  it('stays on the camera position when lead distance is disabled', () => {
+    const camera = new THREE.PerspectiveCamera()
+    const position = new THREE.Vector3(10, 20, 30)
+
+    expect(
+      getDebugChunkStreamingFocusPosition({
+        camera,
+        inputState: {
+          ...idleInput,
+          forward: true,
+          right: true,
+        },
+        leadDistance: 0,
+        position,
+      }).toArray()
+    ).toEqual([10, 20, 30])
+  })
+
   it('prefetches ahead of forward movement', () => {
     const camera = new THREE.PerspectiveCamera()
     const position = new THREE.Vector3(10, 20, 30)
