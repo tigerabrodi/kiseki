@@ -33,6 +33,16 @@ function getMaterial(
   return voxels[xyz2i(x, y, z)] ?? 0
 }
 
+function hasOpenSkyColumn(voxels: Uint8Array, x: number, y: number, z: number) {
+  for (let sampleY = y; sampleY < CHUNK_SIZE; sampleY += 1) {
+    if (getMaterial(voxels, x, sampleY, z) !== 0) {
+      return false
+    }
+  }
+
+  return true
+}
+
 export function generateFloodFillLightLevels(
   voxels: Uint8Array,
   iterations = GPU_LIGHT_PROPAGATION_ITERATIONS
@@ -41,11 +51,13 @@ export function generateFloodFillLightLevels(
   let write = new Uint8Array(CHUNK_VOLUME)
 
   for (let z = 0; z < CHUNK_SIZE; z += 1) {
-    for (let x = 0; x < CHUNK_SIZE; x += 1) {
-      const index = xyz2i(x, CHUNK_SIZE - 1, z)
+    for (let y = 0; y < CHUNK_SIZE; y += 1) {
+      for (let x = 0; x < CHUNK_SIZE; x += 1) {
+        const index = xyz2i(x, y, z)
 
-      if (getMaterial(voxels, x, CHUNK_SIZE - 1, z) === 0) {
-        read[index] = GPU_LIGHT_MAX_LEVEL
+        if (hasOpenSkyColumn(voxels, x, y, z)) {
+          read[index] = GPU_LIGHT_MAX_LEVEL
+        }
       }
     }
   }

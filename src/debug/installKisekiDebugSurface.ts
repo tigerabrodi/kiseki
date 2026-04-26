@@ -13,6 +13,7 @@ import type {
   ProfileReport,
   ProfileSessionState,
 } from '../profiling/ProfileRecorder.ts'
+import type { VoxelMaterialDebugMode } from '../render/voxelMaterialDebugMode.ts'
 import type { VoxelMaterialGalleryInfo } from '../render/createVoxelMaterialGallery.ts'
 import type { VoxelMaterialComparison } from '../voxel/compareVoxelMaterials.ts'
 import type { ChunkStreamer } from '../world/ChunkStreamer.ts'
@@ -153,6 +154,8 @@ export type KisekiDebugSurface = {
   getGpuVisibilityInfo: () => Promise<KisekiGpuVisibilityInfo>
   getMeshInfo: () => KisekiMeshInfo
   getMaterialGalleryInfo: () => KisekiMaterialGalleryInfo
+  getMaterialDebugMode: () => VoxelMaterialDebugMode
+  getMaterialDebugModes: () => Array<VoxelMaterialDebugMode>
   getProfileReport: () => ProfileReport | null
   getProfileState: () => ProfileSessionState
   getSceneInfo: () => KisekiSceneInfo
@@ -164,6 +167,7 @@ export type KisekiDebugSurface = {
     z: number
   ) => Promise<Array<number> | null>
   setCameraPosition: (x: number, y: number, z: number) => void
+  setMaterialDebugMode: (mode: VoxelMaterialDebugMode) => VoxelMaterialDebugMode
   setMaterialGalleryVisible: (isVisible: boolean) => boolean
   startProfileSession: () => void
   stopProfileSession: () => Promise<ProfileReport | null>

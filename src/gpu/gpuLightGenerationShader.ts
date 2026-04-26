@@ -23,6 +23,30 @@ fn indexToY(index: u32) -> u32 {
   return (index / CHUNK_SIZE) % CHUNK_SIZE;
 }
 
+fn indexToX(index: u32) -> u32 {
+  return index % CHUNK_SIZE;
+}
+
+fn indexToZ(index: u32) -> u32 {
+  return index / (CHUNK_SIZE * CHUNK_SIZE);
+}
+
+fn xyzToIndex(x: u32, y: u32, z: u32) -> u32 {
+  return x + y * CHUNK_SIZE + z * CHUNK_SIZE * CHUNK_SIZE;
+}
+
+fn hasOpenSkyColumn(x: u32, y: u32, z: u32) -> bool {
+  for (var sampleY = y; sampleY < CHUNK_SIZE; sampleY += 1u) {
+    let material = unpackMaterial(voxels[xyzToIndex(x, sampleY, z)]);
+
+    if (material != 0u) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 @compute @workgroup_size(${GPU_LIGHT_GENERATION_WORKGROUP_SIZE})
 fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let index = globalId.x;
@@ -38,7 +62,11 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
     return;
   }
 
-  lightOut[index] = select(0u, MAX_LIGHT, indexToY(index) == CHUNK_SIZE - 1u);
+  lightOut[index] = select(
+    0u,
+    MAX_LIGHT,
+    hasOpenSkyColumn(indexToX(index), indexToY(index), indexToZ(index))
+  );
 }
 `
 }

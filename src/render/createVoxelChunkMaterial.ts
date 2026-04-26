@@ -38,6 +38,11 @@ import {
   SDF_SOFT_SHADOW_OPEN_DISTANCE,
 } from './sdfSoftShadow.ts'
 import { VOXEL_LIGHT_MIN_FACTOR } from './voxelLightShading.ts'
+import {
+  getObjectVoxelMaterialDebugModeId,
+  getVoxelMaterialDebugModeId,
+  setVoxelMaterialDebugMode,
+} from './voxelMaterialDebugMode.ts'
 
 const COORDINATE_MASK = 0x1f
 const MATERIAL_MASK = 0xff
@@ -58,6 +63,9 @@ export function createVoxelChunkMaterial(
   lightState?: GpuLightMaterialState
 ): THREE.MeshStandardNodeMaterial {
   const material = new THREE.MeshStandardNodeMaterial()
+
+  setVoxelMaterialDebugMode(material, 'final')
+
   const packedVertex = attribute<'uint'>('packedData', 'uint')
   const x = packedVertex
     .bitAnd(uint(COORDINATE_MASK))
@@ -190,6 +198,11 @@ export function createVoxelChunkMaterial(
   const chunkLightSlotIndexNode = uint(
     uniform(0).onObjectUpdate(({ object }) => getChunkLightSlotIndex(object))
   )
+  const materialDebugModeNode = uint(
+    uniform(0).onObjectUpdate(({ object }) =>
+      getObjectVoxelMaterialDebugModeId(object)
+    )
+  )
   const visibilityWordNode =
     visibilityState === undefined
       ? null
@@ -302,17 +315,51 @@ export function createVoxelChunkMaterial(
     .clamp(0, 1)
     .mul(1 - VOXEL_LIGHT_MIN_FACTOR)
     .add(VOXEL_LIGHT_MIN_FACTOR)
+  const finalColor = basecolorSample.rgb
+    .mul(heightOcclusion)
+    .mul(sdfAmbientOcclusion)
+    .mul(sdfSoftShadow)
+    .mul(voxelLightFactor)
+  const debugColor = select(
+    materialDebugModeNode.equal(uint(getVoxelMaterialDebugModeId('basecolor'))),
+    basecolorSample.rgb,
+    select(
+      materialDebugModeNode.equal(uint(getVoxelMaterialDebugModeId('normal'))),
+      localSurfaceNormal.mul(0.5).add(0.5),
+      select(
+        materialDebugModeNode.equal(
+          uint(getVoxelMaterialDebugModeId('voxelLight'))
+        ),
+        vec3(voxelLightFactor),
+        select(
+          materialDebugModeNode.equal(
+            uint(getVoxelMaterialDebugModeId('sdfAo'))
+          ),
+          vec3(sdfAmbientOcclusion),
+          select(
+            materialDebugModeNode.equal(
+              uint(getVoxelMaterialDebugModeId('sdfShadow'))
+            ),
+            vec3(sdfSoftShadow),
+            select(
+              materialDebugModeNode.equal(
+                uint(getVoxelMaterialDebugModeId('height'))
+              ),
+              vec3(heightOcclusion),
+              finalColor
+            )
+          )
+        )
+      )
+    )
+  )
 
   material.positionNode = Fn(() => {
     surfaceUvVarying.assign(surfaceUv)
 
     return localCulledPosition
   })()
-  material.colorNode = basecolorSample.rgb
-    .mul(heightOcclusion)
-    .mul(sdfAmbientOcclusion)
-    .mul(sdfSoftShadow)
-    .mul(voxelLightFactor)
+  material.colorNode = debugColor
   material.normalNode = transformNormalToView(localSurfaceNormal).normalize()
   material.roughnessNode = roughnessSample.r
     .mul(0.9)

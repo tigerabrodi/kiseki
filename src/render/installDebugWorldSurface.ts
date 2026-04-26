@@ -35,11 +35,24 @@ import type { Chunk } from '../voxel/chunk.ts'
 import type { ChunkStreamer } from '../world/ChunkStreamer.ts'
 import type { ChunkCoordinates } from '../world/World.ts'
 import { getSceneBackgroundType } from './debugWorldHelpers.ts'
+import {
+  readVoxelMaterialDebugMode,
+  setVoxelMaterialDebugMode,
+  VOXEL_MATERIAL_DEBUG_MODES,
+} from './voxelMaterialDebugMode.ts'
 
 type DisposableMesh = THREE.Mesh<
   THREE.BufferGeometry,
   THREE.Material | Array<THREE.Material>
 >
+
+function getFirstChunkMaterial(
+  chunkMeshes: Array<DisposableMesh>
+): THREE.Material | null {
+  const material = chunkMeshes[0]?.material
+
+  return Array.isArray(material) ? (material[0] ?? null) : (material ?? null)
+}
 
 type InstallDebugWorldSurfaceOptions = {
   breakTargetBlock: () => Promise<KisekiVoxelEditResult>
@@ -184,6 +197,9 @@ export function installDebugWorldSurface(
       lastErrorMessage: options.getGpuTerrainErrorMessage(),
     }),
     getGpuVisibilityInfo: options.getGpuVisibilityInfo,
+    getMaterialDebugMode: () =>
+      readVoxelMaterialDebugMode(getFirstChunkMaterial(options.chunkMeshes())),
+    getMaterialDebugModes: () => [...VOXEL_MATERIAL_DEBUG_MODES],
     getMaterialGalleryInfo: options.getMaterialGalleryInfo,
     getMeshInfo: () => {
       const firstMesh = options.chunkMeshes()[0]
@@ -235,6 +251,11 @@ export function installDebugWorldSurface(
       return Array.from(await readGpuVoxelChunkMaterials(gpuDevice, handle))
     },
     setCameraPosition: options.setCameraPosition,
+    setMaterialDebugMode: (mode) =>
+      setVoxelMaterialDebugMode(
+        getFirstChunkMaterial(options.chunkMeshes()),
+        mode
+      ),
     setMaterialGalleryVisible: options.setMaterialGalleryVisible,
     startProfileSession: options.startProfileSession,
     stopProfileSession: options.stopProfileSession,
