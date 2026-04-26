@@ -75,7 +75,7 @@ import { TerrainGenerator } from '../world/TerrainGenerator.ts'
 import { advanceDebugWorldCamera } from './advanceDebugWorldCamera.ts'
 import * as pfw from './profileFrameWork.ts'
 
-const CHUNK_STREAMING_LEAD_DISTANCE = CHUNK_SIZE * 1.5
+const CHUNK_STREAMING_LEAD_DISTANCE = CHUNK_SIZE * 2.5
 const GPU_TIMESTAMP_QUERY_PARAM = 'gpu-timestamps'
 
 export async function startDebugWorld(
