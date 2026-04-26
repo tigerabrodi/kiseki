@@ -1,7 +1,6 @@
 import * as THREE from 'three/webgpu'
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js'
 import WebGPU from 'three/addons/capabilities/WebGPU.js'
-
 import { getFlyMovementIntent } from '../camera/getFlyMovementIntent.ts'
 import { FixedStepLoop } from '../core/FixedStepLoop.ts'
 import { buildGpuPipelineInfo } from '../debug/buildGpuPipelineInfo.ts'
@@ -147,6 +146,7 @@ export async function startDebugWorld(
   const profileRecorder = new ProfileRecorder()
   const gpuIndirectDrawProfileSampler = createGpuIndirectDrawProfileSampler({
     getCuller: () => gpuChunkIndirectDrawCuller,
+    getOcclusionCuller: () => gpuChunkOcclusionCuller,
     recorder: profileRecorder,
   })
   const voxelOverrideStore = new VoxelOverrideStore()

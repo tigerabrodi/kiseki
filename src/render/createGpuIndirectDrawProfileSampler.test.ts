@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import type { GpuChunkIndirectDrawCuller } from '../gpu/GpuChunkIndirectDrawCuller.ts'
+import type { GpuChunkOcclusionCuller } from '../gpu/GpuChunkOcclusionCuller.ts'
 import { ProfileRecorder } from '../profiling/ProfileRecorder.ts'
 import { createGpuIndirectDrawProfileSampler } from './createGpuIndirectDrawProfileSampler.ts'
 
@@ -12,6 +13,15 @@ function createFakeCuller(
   }>
 ): GpuChunkIndirectDrawCuller {
   return { readDrawInfo } as unknown as GpuChunkIndirectDrawCuller
+}
+
+function createFakeOcclusionCuller(
+  readInfo: () => Promise<{
+    activeSlotCount: number
+    candidateVisibleChunkCount: number
+  }>
+): GpuChunkOcclusionCuller {
+  return { readInfo } as unknown as GpuChunkOcclusionCuller
 }
 
 describe('createGpuIndirectDrawProfileSampler', () => {
@@ -61,5 +71,32 @@ describe('createGpuIndirectDrawProfileSampler', () => {
     expect(readDrawInfo).toHaveBeenCalledTimes(1)
     expect(report?.indirectDraw?.activeDrawCount.average).toBe(4)
     expect(report?.indirectDraw?.zeroedCommandCount.average).toBe(8)
+  })
+
+  it('records occlusion info with indirect draw samples when available', async () => {
+    const recorder = new ProfileRecorder()
+    const readDrawInfo = vi.fn().mockResolvedValue({
+      activeDrawCount: 4,
+      commandCount: 12,
+      words: [],
+    })
+    const readInfo = vi.fn().mockResolvedValue({
+      activeSlotCount: 94,
+      candidateVisibleChunkCount: 69,
+    })
+    const sampler = createGpuIndirectDrawProfileSampler({
+      getCuller: () => createFakeCuller(readDrawInfo),
+      getOcclusionCuller: () => createFakeOcclusionCuller(readInfo),
+      recorder,
+    })
+
+    recorder.start(0)
+    await sampler.flush()
+    const report = recorder.stop(1000)
+
+    expect(readInfo).toHaveBeenCalledTimes(1)
+    expect(report?.occlusion?.activeSlotCount.average).toBe(94)
+    expect(report?.occlusion?.candidateVisibleChunkCount.average).toBe(69)
+    expect(report?.occlusion?.culledSlotCount.average).toBe(25)
   })
 })

@@ -2,10 +2,12 @@ import type {
   GpuChunkIndirectDrawCuller,
   GpuIndirectDrawInfo,
 } from '../gpu/GpuChunkIndirectDrawCuller.ts'
+import type { GpuChunkOcclusionCuller } from '../gpu/GpuChunkOcclusionCuller.ts'
 import type { ProfileRecorder } from '../profiling/ProfileRecorder.ts'
 
 type CreateGpuIndirectDrawProfileSamplerOptions = {
   getCuller: () => GpuChunkIndirectDrawCuller | null
+  getOcclusionCuller?: () => GpuChunkOcclusionCuller | null
   recorder: ProfileRecorder
   refreshEveryFrames?: number
 }
@@ -25,12 +27,15 @@ export function createGpuIndirectDrawProfileSampler(
 
   const readAndRecord = async (): Promise<void> => {
     const culler = options.getCuller()
+    const occlusionCuller = options.getOcclusionCuller?.() ?? null
 
-    if (culler === null) {
-      return
+    if (culler !== null) {
+      options.recorder.recordIndirectDrawInfo(await culler.readDrawInfo())
     }
 
-    options.recorder.recordIndirectDrawInfo(await culler.readDrawInfo())
+    if (occlusionCuller !== null) {
+      options.recorder.recordOcclusionInfo(await occlusionCuller.readInfo())
+    }
   }
 
   const resolveIfNeeded = (force = false): void => {

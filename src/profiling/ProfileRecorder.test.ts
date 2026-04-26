@@ -70,6 +70,10 @@ describe('ProfileRecorder', () => {
       activeDrawCount: 12,
       commandCount: 100,
     })
+    recorder.recordOcclusionInfo({
+      activeSlotCount: 90,
+      candidateVisibleChunkCount: 70,
+    })
     recorder.recordTerrainGeneration(6, 32)
     recorder.recordMeshGeneration(8, 32)
     recorder.recordFrame({
@@ -85,6 +89,10 @@ describe('ProfileRecorder', () => {
     recorder.recordIndirectDrawInfo({
       activeDrawCount: 16,
       commandCount: 100,
+    })
+    recorder.recordOcclusionInfo({
+      activeSlotCount: 110,
+      candidateVisibleChunkCount: 80,
     })
 
     const report = recorder.stop(3000, endAllocation)
@@ -140,6 +148,26 @@ describe('ProfileRecorder', () => {
           average: 86,
           max: 88,
           min: 84,
+          samples: 2,
+        },
+      },
+      occlusion: {
+        activeSlotCount: {
+          average: 100,
+          max: 110,
+          min: 90,
+          samples: 2,
+        },
+        candidateVisibleChunkCount: {
+          average: 75,
+          max: 80,
+          min: 70,
+          samples: 2,
+        },
+        culledSlotCount: {
+          average: 25,
+          max: 30,
+          min: 20,
           samples: 2,
         },
       },
@@ -229,6 +257,7 @@ describe('ProfileRecorder', () => {
 
     expect(report?.gpuTimeMs).toBeNull()
     expect(report?.indirectDraw).toBeNull()
+    expect(report?.occlusion).toBeNull()
     expect(report?.memory.jsHeapBytes).toBeNull()
     expect(report?.meshGenerationChunkCount.average).toBe(0)
     expect(report?.meshGenerationPerChunkMs.average).toBe(0)
@@ -280,6 +309,10 @@ describe('ProfileRecorder', () => {
       activeDrawCount: 12,
       commandCount: 100,
     })
+    recorder.recordOcclusionInfo({
+      activeSlotCount: 94,
+      candidateVisibleChunkCount: 69,
+    })
 
     const report = recorder.stop(1000, allocation)
 
@@ -295,6 +328,9 @@ describe('ProfileRecorder', () => {
     )
     expect(formatProfileReport(report!)).toContain(
       'Indirect command slots avg/min/max'
+    )
+    expect(formatProfileReport(report!)).toContain(
+      'Occlusion culled slots avg/min/max'
     )
     expect(formatProfileReport(report!)).toContain(
       'Terrain ms/chunk avg/min/max'

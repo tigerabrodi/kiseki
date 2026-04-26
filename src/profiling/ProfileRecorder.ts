@@ -50,6 +50,12 @@ export type ProfileIndirectDrawSummary = {
   zeroedCommandCount: ProfileMetricSummary
 }
 
+export type ProfileOcclusionSummary = {
+  activeSlotCount: ProfileMetricSummary
+  candidateVisibleChunkCount: ProfileMetricSummary
+  culledSlotCount: ProfileMetricSummary
+}
+
 export type ProfileMeshGenerationSummary = ProfileMetricSummary & {
   total: number
 }
@@ -62,6 +68,7 @@ export type ProfileReport = {
   frameCount: number
   gpuTimeMs: ProfileMetricSummary | null
   indirectDraw: ProfileIndirectDrawSummary | null
+  occlusion: ProfileOcclusionSummary | null
   allocation: ProfileAllocationSummary | null
   memory: ProfileMemorySummary
   meshGenerationChunkCount: ProfileMetricSummary
@@ -228,6 +235,21 @@ export function formatProfileReport(report: ProfileReport): string {
         ? 'Unavailable'
         : formatMetric(report.indirectDraw.commandCount, 1)
     }`,
+    `Occlusion active slots avg/min/max: ${
+      report.occlusion === null
+        ? 'Unavailable'
+        : formatMetric(report.occlusion.activeSlotCount, 1)
+    }`,
+    `Occlusion candidates avg/min/max: ${
+      report.occlusion === null
+        ? 'Unavailable'
+        : formatMetric(report.occlusion.candidateVisibleChunkCount, 1)
+    }`,
+    `Occlusion culled slots avg/min/max: ${
+      report.occlusion === null
+        ? 'Unavailable'
+        : formatMetric(report.occlusion.culledSlotCount, 1)
+    }`,
     `Terrain dispatches: ${report.terrainGenerationTimeMs.samples}`,
     `Terrain chunks avg/min/max: ${formatMetric(report.terrainGenerationChunkCount, 1)}`,
     `Terrain ms avg/max/total: ${report.terrainGenerationTimeMs.average.toFixed(2)} / ${report.terrainGenerationTimeMs.max.toFixed(2)} / ${report.terrainGenerationTimeMs.total.toFixed(2)}`,
@@ -340,6 +362,9 @@ export class ProfileRecorder {
   private readonly meshGenerationChunkCount = new MetricAccumulator()
   private readonly meshGenerationPerChunkMs = new MetricAccumulator()
   private readonly meshGenerationTimeMs = new MetricAccumulator()
+  private readonly occlusionActiveSlotCount = new MetricAccumulator()
+  private readonly occlusionCandidateVisibleChunkCount = new MetricAccumulator()
+  private readonly occlusionCulledSlotCount = new MetricAccumulator()
   private readonly terrainGenerationChunkCount = new MetricAccumulator()
   private readonly terrainGenerationPerChunkMs = new MetricAccumulator()
   private readonly terrainGenerationTimeMs = new MetricAccumulator()
@@ -407,6 +432,23 @@ export class ProfileRecorder {
     )
   }
 
+  recordOcclusionInfo(sample: {
+    activeSlotCount: number
+    candidateVisibleChunkCount: number
+  }): void {
+    if (!this.isRecordingSession) {
+      return
+    }
+
+    this.occlusionActiveSlotCount.add(sample.activeSlotCount)
+    this.occlusionCandidateVisibleChunkCount.add(
+      sample.candidateVisibleChunkCount
+    )
+    this.occlusionCulledSlotCount.add(
+      Math.max(0, sample.activeSlotCount - sample.candidateVisibleChunkCount)
+    )
+  }
+
   recordMeshGeneration(durationMs: number, chunkCount: number): void {
     if (!this.isRecordingSession) {
       return
@@ -471,6 +513,15 @@ export class ProfileRecorder {
               commandCount: this.indirectCommandCount.summary(),
               zeroedCommandCount: this.indirectZeroedCommandCount.summary(),
             },
+      occlusion:
+        this.occlusionActiveSlotCount.summary().samples === 0
+          ? null
+          : {
+              activeSlotCount: this.occlusionActiveSlotCount.summary(),
+              candidateVisibleChunkCount:
+                this.occlusionCandidateVisibleChunkCount.summary(),
+              culledSlotCount: this.occlusionCulledSlotCount.summary(),
+            },
       allocation: buildAllocationSummary(
         this.sessionStartGpuAllocationSnapshot,
         gpuAllocationSnapshot
@@ -515,6 +566,9 @@ export class ProfileRecorder {
     this.meshGenerationChunkCount.reset()
     this.meshGenerationPerChunkMs.reset()
     this.meshGenerationTimeMs.reset()
+    this.occlusionActiveSlotCount.reset()
+    this.occlusionCandidateVisibleChunkCount.reset()
+    this.occlusionCulledSlotCount.reset()
     this.terrainGenerationChunkCount.reset()
     this.terrainGenerationPerChunkMs.reset()
     this.terrainGenerationTimeMs.reset()
