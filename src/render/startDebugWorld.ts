@@ -45,7 +45,6 @@ import {
   type DebugWorldHandle,
   disposeChunkMeshPool,
   type DisposableMesh,
-  getJsHeapBytes,
   getPipelineState,
   turnCameraByDegrees,
   updatePointerHud,
@@ -73,6 +72,7 @@ import {
 import { VoxelOverrideStore } from '../world/VoxelOverrideStore.ts'
 import { TerrainGenerator } from '../world/TerrainGenerator.ts'
 import { advanceDebugWorldCamera } from './advanceDebugWorldCamera.ts'
+import * as pfw from './profileFrameWork.ts'
 
 export async function startDebugWorld(
   root: HTMLElement
@@ -166,6 +166,7 @@ export async function startDebugWorld(
   let renderFramesSinceGpuResolve = 0
   let isVoxelEditInFlight = false
   const profileRecorder = new ProfileRecorder()
+  let pendingProfileFrameWork = pfw.createProfileFrameWork()
   const gpuIndirectDrawProfileSampler = createGpuIndirectDrawProfileSampler({
     getCuller: () => gpuChunkIndirectDrawCuller,
     getOcclusionCuller: () => gpuChunkOcclusionCuller,
@@ -250,6 +251,7 @@ export async function startDebugWorld(
 
     chunkMeshes = result.chunkMeshes
     lastMeshGenerationTimeMs = result.meshGenerationTimeMs
+    pfw.addProfileMeshWork(pendingProfileFrameWork, result)
     gpuOcclusionController.syncGraph()
 
     if (result.remeshedChunkCount > 0) {
@@ -264,12 +266,15 @@ export async function startDebugWorld(
     const streamUpdate = chunkStreamer.updateFromWorldPosition(position)
 
     if (streamUpdate.didChange) {
+      pfw.addProfileStreamWork(pendingProfileFrameWork, streamUpdate)
+
       const voxelSyncResult = syncStreamedGpuVoxelBuffers({
         gpuTerrainGenerator,
         gpuVoxelCache,
         update: streamUpdate,
       })
       lastTerrainGenerationTimeMs = voxelSyncResult.terrainGenerationTimeMs
+      pfw.addProfileTerrainWork(pendingProfileFrameWork, voxelSyncResult)
 
       if (voxelSyncResult.generatedChunkCount > 0) {
         profileRecorder.recordTerrainGeneration(
@@ -285,6 +290,7 @@ export async function startDebugWorld(
         update: streamUpdate,
       })
       lastSdfGenerationTimeMs = sdfSyncResult.sdfGenerationTimeMs
+      pfw.addProfileSdfWork(pendingProfileFrameWork, sdfSyncResult)
 
       if (sdfSyncResult.generatedChunkCount > 0) {
         profileRecorder.recordSdfGeneration(
@@ -300,6 +306,7 @@ export async function startDebugWorld(
         update: streamUpdate,
       })
       lastLightGenerationTimeMs = lightSyncResult.lightGenerationTimeMs
+      pfw.addProfileLightWork(pendingProfileFrameWork, lightSyncResult)
 
       if (lightSyncResult.generatedChunkCount > 0) {
         profileRecorder.recordLightGeneration(
@@ -523,6 +530,7 @@ export async function startDebugWorld(
       return
     }
 
+    pendingProfileFrameWork = pfw.createProfileFrameWork()
     profileRecorder.start(performance.now(), captureGpuAllocationSnapshot())
     applyStatsToHud()
   }
@@ -695,6 +703,7 @@ export async function startDebugWorld(
       return voxelMaterialGallery?.info().isVisible ?? false
     },
     startProfileSession: (): void => {
+      pendingProfileFrameWork = pfw.createProfileFrameWork()
       profileRecorder.start(performance.now(), captureGpuAllocationSnapshot())
       applyStatsToHud()
     },
@@ -839,14 +848,13 @@ export async function startDebugWorld(
     lastCpuFrameTimeMs = performance.now() - frameStartMs
 
     if (frame.frameTimeSeconds > 0) {
-      profileRecorder.recordFrame({
-        chunkCount: chunkStreamer.world.size(),
-        cpuTimeMs: lastCpuFrameTimeMs,
-        fps: instantaneousFps,
+      pendingProfileFrameWork = pfw.recordProfileFrame({
+        frameTimeSeconds: frame.frameTimeSeconds,
+        frameWork: pendingProfileFrameWork,
         gpuMemoryBytes: renderer.info.memory.total,
-        gpuTimeMs: null,
-        jsHeapBytes: getJsHeapBytes(),
-        triangleCount: totalTriangleCount,
+        gpuTimeMs: lastGpuFrameTimeMs,
+        recorder: profileRecorder,
+        stats: buildStatsSnapshot(),
       })
       gpuIndirectDrawProfileSampler.tick()
     }

@@ -59,6 +59,7 @@ describe('ProfileRecorder', () => {
     recorder.recordFrame({
       chunkCount: 27,
       cpuTimeMs: 2,
+      frameTimeMs: 16,
       fps: 60,
       gpuMemoryBytes: 4096,
       gpuTimeMs: null,
@@ -81,6 +82,7 @@ describe('ProfileRecorder', () => {
     recorder.recordFrame({
       chunkCount: 36,
       cpuTimeMs: 4,
+      frameTimeMs: 20,
       fps: 50,
       gpuMemoryBytes: 6144,
       gpuTimeMs: null,
@@ -107,6 +109,12 @@ describe('ProfileRecorder', () => {
         average: 55,
         max: 60,
         min: 50,
+        samples: 2,
+      },
+      frameTimeMs: {
+        average: 18,
+        max: 20,
+        min: 16,
         samples: 2,
       },
       chunkCount: {
@@ -286,6 +294,7 @@ describe('ProfileRecorder', () => {
     recorder.recordFrame({
       chunkCount: 27,
       cpuTimeMs: 3.4,
+      frameTimeMs: 17.2,
       fps: 58,
       gpuMemoryBytes: 4096,
       gpuTimeMs: null,
@@ -298,6 +307,7 @@ describe('ProfileRecorder', () => {
     expect(report?.gpuTimeMs).toBeNull()
     expect(report?.indirectDraw).toBeNull()
     expect(report?.occlusion).toBeNull()
+    expect(report?.slowFrames).toHaveLength(1)
     expect(report?.memory.jsHeapBytes).toBeNull()
     expect(report?.meshGenerationChunkCount.average).toBe(0)
     expect(report?.meshGenerationPerChunkMs.average).toBe(0)
@@ -344,6 +354,7 @@ describe('ProfileRecorder', () => {
     recorder.recordFrame({
       chunkCount: 27,
       cpuTimeMs: 3,
+      frameTimeMs: 16.7,
       fps: 60,
       gpuMemoryBytes: 1024 * 1024 * 8,
       gpuTimeMs: null,
@@ -367,6 +378,8 @@ describe('ProfileRecorder', () => {
       'Kiseki Profile Checkpoint 6'
     )
     expect(formatProfileReport(report!)).toContain('FPS avg/min/max')
+    expect(formatProfileReport(report!)).toContain('Frame ms avg/min/max')
+    expect(formatProfileReport(report!)).toContain('Worst frame 1')
     expect(formatProfileReport(report!)).toContain('CPU @60Hz budget avg/max')
     expect(formatProfileReport(report!)).toContain('Indirect draws avg/min/max')
     expect(formatProfileReport(report!)).toContain(
@@ -391,5 +404,58 @@ describe('ProfileRecorder', () => {
       'GPU buffers start/end/delta'
     )
     expect(formatProfileReport(report!)).toContain('GPU memory avg/max')
+  })
+
+  it('keeps the slowest frames with streaming context', () => {
+    const recorder = new ProfileRecorder()
+
+    recorder.start(100)
+
+    for (let frameIndex = 0; frameIndex < 7; frameIndex += 1) {
+      recorder.recordFrame({
+        chunkCount: 100 + frameIndex,
+        cpuTimeMs: frameIndex,
+        drawCalls: 10 + frameIndex,
+        frameTimeMs: 10 + frameIndex,
+        fps: 100 - frameIndex,
+        gpuMemoryBytes: 1024,
+        gpuTimeMs: frameIndex === 6 ? 4 : null,
+        jsHeapBytes: 2048 + frameIndex,
+        lightGeneratedChunkCount: frameIndex + 3,
+        lightGenerationTimeMs: frameIndex + 0.3,
+        meshGenerationTimeMs: frameIndex + 0.4,
+        meshRebuiltChunkCount: frameIndex + 4,
+        playerChunk: { x: frameIndex, y: 1, z: 2 },
+        position: { x: frameIndex * 16, y: 32, z: 48 },
+        sdfGeneratedChunkCount: frameIndex + 2,
+        sdfGenerationTimeMs: frameIndex + 0.2,
+        streamedInChunkCount: frameIndex,
+        streamedOutChunkCount: Math.max(0, frameIndex - 1),
+        terrainGeneratedChunkCount: frameIndex + 1,
+        terrainGenerationTimeMs: frameIndex + 0.1,
+        timestampMs: 100 + frameIndex * 1000,
+        triangleCount: 20000 + frameIndex,
+        visibleChunkCount: 40 + frameIndex,
+      })
+    }
+
+    const report = recorder.stop(8000)
+
+    expect(report?.slowFrames).toHaveLength(5)
+    expect(report?.slowFrames.map((frame) => frame.frameTimeMs)).toEqual([
+      16, 15, 14, 13, 12,
+    ])
+    expect(report?.slowFrames[0]).toMatchObject({
+      drawCalls: 16,
+      elapsedSeconds: 6,
+      gpuTimeMs: 4,
+      lightGeneratedChunkCount: 9,
+      meshRebuiltChunkCount: 10,
+      playerChunk: { x: 6, y: 1, z: 2 },
+      position: { x: 96, y: 32, z: 48 },
+      streamedInChunkCount: 6,
+      streamedOutChunkCount: 5,
+      visibleChunkCount: 46,
+    })
   })
 })
