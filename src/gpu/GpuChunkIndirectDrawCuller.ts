@@ -89,7 +89,7 @@ export class GpuChunkIndirectDrawCuller {
     })
   }
 
-  apply(): void {
+  encodeApply(encoder: GPUCommandEncoder): void {
     this.device.queue.writeBuffer(
       this.paramBuffer,
       0,
@@ -99,9 +99,6 @@ export class GpuChunkIndirectDrawCuller {
       )
     )
 
-    const encoder = this.device.createCommandEncoder({
-      label: 'chunk_indirect_draw_culling_encoder',
-    })
     const pass = encoder.beginComputePass({
       label: 'chunk_indirect_draw_culling_pass',
     })
@@ -114,6 +111,14 @@ export class GpuChunkIndirectDrawCuller {
       )
     )
     pass.end()
+  }
+
+  apply(): void {
+    const encoder = this.device.createCommandEncoder({
+      label: 'chunk_indirect_draw_culling_encoder',
+    })
+
+    this.encodeApply(encoder)
     this.device.queue.submit([encoder.finish()])
   }
 

@@ -183,7 +183,8 @@ export async function startDebugWorld(
     },
   })
   const gpuVisibilityTracker = createGpuVisibilityTracker({
-    afterCull: () => gpuChunkIndirectDrawCuller?.apply(),
+    encodeAfterCull: (encoder) =>
+      gpuChunkIndirectDrawCuller?.encodeApply(encoder),
     beforeCull: () => gpuOcclusionController.cullIfNeeded(),
     getCuller: () => gpuChunkVisibilityCuller,
     onVisibilityInfoChange: () => applyStatsToHud(),

@@ -1,18 +1,27 @@
 import * as THREE from 'three/webgpu'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { GpuChunkVisibilityCuller } from '../gpu/GpuChunkVisibilityCuller.ts'
+import type {
+  GpuChunkVisibilityCuller,
+  GpuChunkVisibilityCullOptions,
+} from '../gpu/GpuChunkVisibilityCuller.ts'
 import { createGpuVisibilityTracker } from './createGpuVisibilityTracker.ts'
+
+type FakeVisibilityCull = (
+  camera: THREE.Camera,
+  options?: GpuChunkVisibilityCullOptions
+) => void
 
 function createFakeCuller(
   readVisibilityInfo = vi.fn().mockResolvedValue({
     chunkCount: 10,
     visibleChunkCount: 4,
     words: [],
-  })
+  }),
+  cull: FakeVisibilityCull = vi.fn()
 ): GpuChunkVisibilityCuller {
   return {
-    cull: vi.fn(),
+    cull,
     readVisibilityInfo,
   } as unknown as GpuChunkVisibilityCuller
 }
@@ -53,5 +62,29 @@ describe('createGpuVisibilityTracker', () => {
       visibleChunkCount: 4,
     })
     expect(readVisibilityInfo).toHaveBeenCalledTimes(1)
+  })
+
+  it('passes ordered GPU work into the visibility culler', () => {
+    let passedOptions: GpuChunkVisibilityCullOptions | undefined
+    const cull = vi.fn<FakeVisibilityCull>((_camera, options) => {
+      passedOptions = options
+    })
+    const encodeAfterCull = vi.fn()
+    const camera = new THREE.PerspectiveCamera()
+    const tracker = createGpuVisibilityTracker({
+      encodeAfterCull,
+      getCuller: () => createFakeCuller(undefined, cull),
+      onVisibilityInfoChange: vi.fn(),
+      refreshEveryFrames: null,
+    })
+
+    tracker.cull(camera)
+
+    const encoder = {} as GPUCommandEncoder
+
+    passedOptions?.encodeAfterCull?.(encoder)
+
+    expect(passedOptions?.encodeAfterCull).toBe(encodeAfterCull)
+    expect(encodeAfterCull).toHaveBeenCalledWith(encoder)
   })
 })

@@ -71,6 +71,10 @@ export type GpuChunkVisibilityDrawState = {
   visibilityWordCount: number
 }
 
+export type GpuChunkVisibilityCullOptions = {
+  encodeAfterCull?: (encoder: GPUCommandEncoder) => void
+}
+
 export class GpuChunkVisibilityCuller {
   private bindGroup: GPUBindGroup
   private readonly boundsBuffer: GPUBuffer
@@ -171,7 +175,7 @@ export class GpuChunkVisibilityCuller {
     })
   }
 
-  cull(camera: THREE.Camera): void {
+  private encodeCull(encoder: GPUCommandEncoder, camera: THREE.Camera): void {
     this.device.queue.writeBuffer(
       this.paramBuffer,
       0,
@@ -181,10 +185,6 @@ export class GpuChunkVisibilityCuller {
         this.capacityValue
       )
     )
-
-    const encoder = this.device.createCommandEncoder({
-      label: 'chunk_visibility_culling_encoder',
-    })
 
     encoder.clearBuffer(this.visibilityBuffer)
 
@@ -198,6 +198,18 @@ export class GpuChunkVisibilityCuller {
       Math.ceil(this.capacityValue / GPU_CHUNK_VISIBILITY_CULL_WORKGROUP_SIZE)
     )
     pass.end()
+  }
+
+  cull(
+    camera: THREE.Camera,
+    options: GpuChunkVisibilityCullOptions = {}
+  ): void {
+    const encoder = this.device.createCommandEncoder({
+      label: 'chunk_visibility_culling_encoder',
+    })
+
+    this.encodeCull(encoder, camera)
+    options.encodeAfterCull?.(encoder)
     this.device.queue.submit([encoder.finish()])
   }
 
