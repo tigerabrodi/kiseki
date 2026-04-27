@@ -1,203 +1,335 @@
-# Kiseki Pre-Refactor Finish Plan
+# Kiseki Final Pre-Refactor Plan
 
-This is the final engine push before we refactor Kiseki into a clean reusable
-voxel engine for future game work. The goal is not gameplay yet. The goal is to
-make the engine beautiful, vast, stable, and weirdly ambitious on WebGPU.
+This is the final working roadmap before Kiseki becomes a cleaner reusable
+voxel engine. The goal is still not gameplay, networking, or a shooter yet. The
+goal is to make the outdoor infinite-world demo feel vast, smooth, beautiful,
+and WebGPU-heavy enough that the later engine API is worth extracting.
 
 ## North Star
 
-Kiseki should feel like a real outdoor voxel world:
+Kiseki should feel like an outdoor voxel engine that can later power many kinds
+of games:
 
-- Smooth flying and looking, with no chunk-streaming hitch.
-- Intentional lighting and material color.
-- Nature that reads as outdoors, not just generated block terrain.
-- Far views that feel huge without paying full voxel cost everywhere.
-- GPU-driven systems pushed far enough that the browser version feels special.
-- A final codebase shape that can later host a voxel shooter without dragging
-  prototype experiments into game code.
+- Infinite outdoor terrain that feels massive from high viewpoints.
+- Near terrain remains real voxels: editable, lit, collidable, and detailed.
+- Far terrain is cheap visual context, not full voxel chunks.
+- Chunk streaming feels smooth during fly mode and should feel invisible during
+  normal ground movement.
+- Lighting, fog, materials, and atmosphere feel intentional instead of accidental.
+- WebGPU does meaningful work: terrain, SDF/light data, meshing, visibility, and
+  indirect draw masking.
+- Final refactor exposes clean engine seams so future games can plug in custom
+  maps, generators, render settings, and gameplay systems.
 
-## Phase 1g. Lighting And Material Look Pass
+## Core Rule
 
-Goal: make the current terrain colors and PBR textures feel intentional.
+Do not solve vastness by loading more full voxel chunks.
 
-Work:
+Full chunks are for the playable near field. Huge views come from far terrain,
+LOD rings, horizon treatment, and fog. If a fix makes the world look bigger by
+brute-forcing near chunks, it is probably the wrong long-term fix.
 
-- Add debug knobs for exposure, sun strength, sky ambient, AO strength, SDF
-  shadow strength, fog color/density, material brightness, and saturation.
-- Add look presets: bright voxel, natural outdoor, moody shooter, and flat
-  debug.
-- Verify grass top, grass side, dirt, stone, and snow under each look.
-- Keep this as an art-direction pass, not a renderer rewrite.
+## Phase 0. Baseline And Safety
 
-Exit criteria:
+Goal: keep the repo on a trusted baseline before continuing.
 
-- The user can tweak lighting live in the HUD or debug surface.
-- There is at least one preset that makes outdoor terrain feel good.
-- The texture colors no longer feel mysterious or accidental.
-- Full checks pass: `bun run format`, `bun tsc`, `bun lint`, `bun run test`,
-  and `bun run build`.
-- Browser smoke passes on `http://localhost:5173/`.
+Status: done.
 
-## Phase 1h. Smoothness Contract
+What this means:
 
-Goal: make sure future visual features cannot reintroduce movement hitches.
+- Keep the current committed outdoor-feature checkpoint as the safe baseline.
+- Do not keep experimental streaming/startup changes unless they are verified.
+- Do not commit future work until the user has reviewed it, unless explicitly
+  asked.
+- Every implementation phase must be tested before it is considered done.
 
-Work:
+## Phase 1. World Provider Boundary
 
-- Keep streaming centered on stable player/body position.
-- Use velocity-based prefetch later, not raw camera-facing prefetch.
-- Budget terrain, SDF, light, mesh, and remesh work independently.
-- Batch GPU submissions where it is straightforward, especially lighting.
-- Improve profiler labels so a bad frame says what caused it.
-
-Exit criteria:
-
-- Moving and looking around stays smooth in a 60 second profile.
-- Worst-frame profile output clearly identifies streaming/generation work.
-- Chunk loading does not dump a large amount of work into a single frame.
-
-## Phase 1i. Outdoor World Generation
-
-Goal: make the world feel like natural terrain.
+Goal: make world generation a replaceable input to the engine without doing the
+full final refactor yet.
 
 Work:
 
-- Improve terrain shaping with hills, valleys, cliffs, and flatter areas.
-- Assign materials by height, depth, slope, moisture, and biome-ish values.
-- Keep generation deterministic per seed and chunk coordinate.
-- Add simple biome controls before going deep on content.
+- Define a small `WorldProvider`-style seam for terrain/material generation.
+- Keep the current outdoor generator behind that seam.
+- Make room for future providers: finite arena maps, handmade maps, imported
+  maps, procedural worlds, and debug worlds.
+- Keep rendering, storage, streaming, and profiling separate from provider
+  decisions.
 
 Exit criteria:
 
-- The world has recognizable outdoor variation.
-- Terrain still generates deterministically.
-- Material transitions look deliberate enough to support trees and water.
+- The core engine does not need to know whether terrain comes from an infinite
+  generator or a finite custom map.
+- The outdoor generator still behaves the same visually.
+- No broad folder churn yet; this is a clean seam, not the final refactor.
 
-## Phase 1j. Trees, Rocks, Houses, And Ruins
+## Phase 2. Terrain Shape Pass
 
-Goal: add procedural points of interest without game logic.
+Goal: make the base outdoor terrain worth looking at before adding more content.
 
 Work:
 
-- Add deterministic tree placement and tree voxel stamps.
-- Add rocks and boulders as small natural structures.
-- Add simple houses and ruins as voxel stamps or lightweight procedural
-  grammars.
-- Make all structures chunk-boundary safe.
+- Improve hills, valleys, ridges, flatter traversal areas, and cliffs.
+- Use deterministic noise layers and material rules that compose cleanly.
+- Reduce ugly slab repetition and unnatural vertical walls where possible.
+- Keep generation chunk-boundary safe.
 
 Exit criteria:
 
-- Structures generate consistently no matter which chunk loads first.
-- Trees and rocks make the terrain feel outdoors.
-- Houses and ruins give us a first exploration vibe.
+- A fly-through reads as a real outdoor landscape, not only stacked blocks.
+- Terrain still matches across chunk boundaries.
+- The world is ready for far terrain, trees, rocks, and water.
 
-## Phase 1k. Water V1
+## Phase 3. Far Terrain And LOD Design
 
-Goal: make water visually convincing without simulating fluid physics.
-
-Work:
-
-- Add lakes or simple river bands from terrain inputs.
-- Render water separately from solid terrain if that gives cleaner visuals.
-- Add a simple WebGPU-friendly water material: tint, depth-ish fade, subtle
-  motion, and reflection-ish highlights if practical.
-- Keep water non-physical for this phase.
-
-Exit criteria:
-
-- Water exists as an outdoor visual feature.
-- Water does not wreck chunk meshing or transparency ordering.
-- It has a clear path to future gameplay/physics, but does not require them.
-
-## Phase 1l. LOD And Vast World
-
-Goal: make the world feel large without full voxel cost everywhere.
+Goal: design the vast-world model before building it.
 
 Ranges:
 
-- Near: full voxel chunks, editable, lit, detailed.
-- Mid: normal or cheaper voxel chunk meshes.
+- Near: full voxel chunks, editable, lit, collidable, detailed.
+- Mid: normal chunks or slightly cheaper voxel meshes.
 - Far: cheap visual-only terrain generated from the same seed.
-- Very far: fog, silhouettes, sky blending, or heightfield horizon.
+- Very far: fog, silhouettes, sky blend, or heightfield horizon.
 
 Work:
 
-- Add far terrain representation, likely heightfield or chunk rings.
-- Share terrain seed/settings with near chunks so far and near match.
-- Fade or morph between far terrain and real chunks to hide pop-in.
-- Treat far trees/structures as simplified silhouettes or skip gracefully.
+- Decide the data format for far terrain: heightfield tiles, rings, or both.
+- Decide how near chunks and far terrain share seed/settings/material logic.
+- Define where transitions happen and how fog hides unavoidable detail loss.
+- Decide which far features exist visually and which are omitted.
 
 Exit criteria:
 
-- From a high point, the world feels much larger than the editable chunk range.
-- Far terrain is cheap in memory, generation, and draw cost.
-- Near chunks can still stream in smoothly over the far representation.
+- The LOD plan is written down enough that implementation is not guesswork.
+- We know which parts are editable and which are only visual.
+- We know how this avoids the "missing giant areas" problem.
 
-## Phase 1m. WebGPU Innovation Lab
+## Phase 4. Far Heightfield Prototype
+
+Goal: make the world feel huge without loading huge numbers of full chunks.
+
+Work:
+
+- Generate visual-only far terrain from the same seed as near chunks.
+- Render far terrain cheaply as heightfield/ring geometry.
+- Keep it non-editable and separate from voxel chunk storage.
+- Start simple: terrain silhouette and color are more important than detail.
+
+Exit criteria:
+
+- From a high point, the world extends far beyond the near chunk radius.
+- Far terrain does not meaningfully increase chunk pool pressure.
+- Near chunks can still stream and edit normally.
+
+## Phase 5. Near/Far Transition
+
+Goal: hide the handoff between full voxel chunks and cheap far terrain.
+
+Work:
+
+- Overlap near chunks and far terrain enough to avoid visible holes.
+- Use fog, fade bands, or material blending to reduce pop-in.
+- Avoid obvious "world ends here" cliffs.
+- Verify chunk loading from high viewpoints and ground viewpoints.
+
+Exit criteria:
+
+- The horizon feels continuous during movement.
+- New near chunks replace far terrain without distracting pops.
+- Missing terrain is no longer visible during normal movement.
+
+## Phase 6. Startup Loading Contract
+
+Goal: make first load feel intentional instead of half-loaded.
+
+Work:
+
+- Define the minimum near-field readiness before the player is released.
+- Show a loading/progress state when needed instead of dropping into gaps.
+- Prioritize initial chunks by player safety and visible importance.
+- Keep startup fast, but do not sacrifice obvious correctness.
+
+Exit criteria:
+
+- The first playable frame has enough terrain to feel coherent.
+- The user is not dropped into an obviously missing world.
+- Startup time is measured, not guessed.
+
+## Phase 7. Runtime Streaming Polish
+
+Goal: make edge catch-up fast when needed and gentle when frames are tight.
+
+Work:
+
+- Keep streaming paced around actual player movement, not camera jitter.
+- Use adaptive catch-up when pending loads grow or visible edges are exposed.
+- Avoid reintroducing hitches from too many submissions, passes, or rebuilds.
+- Keep profiler output specific enough to explain bad frames.
+
+Exit criteria:
+
+- Fly mode stays smooth under normal stress.
+- Ground movement should feel fully stable.
+- Chunk-edge gaps fill quickly without dumping work into one frame.
+
+## Phase 8. Lively Outdoor Features
+
+Goal: add nature after the terrain and far horizon are structurally solid.
+
+Work:
+
+- Keep tree, rock, and boulder placement deterministic.
+- Make stamps sparse, readable, and chunk-boundary safe.
+- Treat these as optional provider/decorator features, not engine identity.
+- Prefer simple good-looking content over lots of noisy content.
+
+Exit criteria:
+
+- The outdoor world feels more alive without breaking load behavior.
+- Features can be disabled or swapped by future world providers.
+- No giant structure artifacts or partial chunk-boundary failures.
+
+## Phase 9. Water V1
+
+Goal: add water as a visual outdoor feature without simulating fluid physics.
+
+Work:
+
+- Add lakes first; rivers can come later if terrain supports them cleanly.
+- Render water separately if it avoids transparency and meshing issues.
+- Use a simple WebGPU-friendly water look: tint, subtle motion, and lighting.
+- Keep water non-physical for now.
+
+Exit criteria:
+
+- Water improves the outdoor read of the scene.
+- Water does not destabilize chunk meshing or visibility.
+- There is a clear path to future gameplay, but no gameplay dependency.
+
+## Phase 10. Atmosphere And Material Pass
+
+Goal: tune the world after terrain, far views, and water exist together.
+
+Work:
+
+- Revisit sun, sky, HDR, AO, SDF shadows, fog, brightness, and saturation.
+- Tune grass top/side, dirt, stone, snow, bark, leaf, and water materials.
+- Keep debug presets useful: natural outdoor, bright debug, moody shooter, flat.
+- Use screenshots and profiles, not vibes alone.
+
+Exit criteria:
+
+- The default look feels intentional.
+- The debug knobs remain useful but do not hide broken defaults.
+- The world screenshots well from ground level and high vistas.
+
+## Phase 11. WebGPU Innovation Lab
 
 Goal: do the fun GPU experiments before freezing architecture.
 
 Candidates:
 
 - Batched multi-chunk compute dispatches.
+- GPU-generated far terrain rings.
 - Palette-compressed or virtualized chunk storage.
 - Temporal AO or shadow accumulation.
-- Hybrid raster plus voxel raymarching for reflections or far detail.
-- GPU-generated far terrain LOD rings.
-- GPU-resident streaming experiments where GPU writes requests for CPU.
+- GPU-side request buffers for future streaming experiments.
+- Hybrid raster plus voxel tricks for far detail or reflections.
 
 Exit criteria:
 
-- Pick one or two experiments that genuinely improve the engine.
-- Keep experiments only if they are measurable, understandable, and maintainable.
+- Keep only experiments that are measurable, understandable, and maintainable.
 - Document anything that should survive the final refactor.
+- Do not let experiments leak into the engine API unless they earn it.
 
-## Phase 1n. Final Profile Gauntlet
+## Phase 12. Profile Gauntlet
 
-Goal: prove the engine is stable before refactor.
+Goal: prove the pre-refactor engine is stable enough to freeze behavior.
 
 Scenarios:
 
-- 60 second fly-through.
-- Fast movement plus camera look stress test.
-- Ground-level outdoor walkthrough.
-- Block edit stress test.
-- High view-distance vista test.
-- Memory stability test.
+- Startup loading.
+- High-vista fly-through.
+- Fast movement plus camera-look stress.
+- Ground-level walkthrough.
+- Chunk-edge traversal.
+- Block edit stress.
+- Memory stability over time.
 
 Metrics:
 
 - FPS average/min/max.
 - Frame time and worst-frame causes.
 - CPU and GPU time.
-- Chunk count and visible chunk count.
+- Chunk count, visible chunks, and pending loads.
 - Triangle count and indirect draw count.
-- Terrain/SDF/light/mesh generation time.
+- Terrain, SDF, light, mesh, and far-terrain generation time.
 - GPU memory, JS heap, and pool stability.
 
 Exit criteria:
 
-- No obvious streaming hitch.
+- No obvious streaming hitch in normal movement.
+- Fly mode is smooth enough for demo work.
 - GPU pools remain stable after startup.
 - Worst frames have explainable causes.
-- We have final numbers to compare against future refactors.
 
-## Phase 2. Final Engine Refactor
+## Phase 13. Final Architecture Analysis
 
-Goal: turn the prototype into a reusable engine core.
+Goal: decide the final public shape before moving files around.
 
 Work:
 
-- Separate modules for streaming, worldgen, GPU storage, meshing, materials,
-  lighting, rendering, profiling, and debug UI.
-- Keep debug hooks powerful but isolated from runtime engine code.
-- Remove dead experiments and prototype coupling.
-- Document how to embed Kiseki into a future game.
+- Document module boundaries for streaming, world providers, GPU storage,
+  meshing, materials, lighting, rendering, profiling, debug UI, and input.
+- Decide which APIs are public and which remain internal.
+- Identify prototype code to delete, isolate, or rewrite.
+- Preserve the WebGPU wins without preserving accidental coupling.
 
 Exit criteria:
 
-- The engine can be started from a small public API.
-- Debug/profiling tools still work.
-- The renderer/world systems are understandable enough to build a shooter on.
-- Full checks and browser smoke pass after refactor.
+- The refactor has a written target.
+- We know what future game code should import.
+- Debug and profiling stay easy to remove or disable.
 
+## Phase 14. Final Engine Refactor
+
+Goal: turn Kiseki from a prototype demo into a reusable TypeScript voxel engine.
+
+Work:
+
+- Extract clean engine entry points.
+- Keep world generation pluggable.
+- Keep debug/profiling tools isolated.
+- Keep renderer/storage/streaming internals understandable.
+- Add docs for embedding Kiseki into a future game.
+
+Exit criteria:
+
+- A small public API can start the engine.
+- A game can provide its own map or world generator.
+- The outdoor demo still works as a showcase.
+- The codebase is ready for future shooter experiments.
+
+## Intentionally Not Now
+
+- Capture-the-flag gameplay.
+- Weapons, loadouts, ammo, grenades, and pickups.
+- Networking, rooms, matchmaking, and voice chat.
+- Spatial audio.
+- Full physics or Rapier integration.
+- Houses, ruins, or complex structures unless they directly help the outdoor
+  engine demo.
+- Infinite full-detail chunks as the answer to vastness.
+
+## Verification Rule
+
+Every implementation phase should finish with:
+
+- `bun run format`
+- `bun tsc --noEmit`
+- `bun lint`
+- `bun run test`
+- `bun run build`
+- Browser smoke on `http://localhost:5173/` when visuals/runtime behavior change.
+- A profile run when streaming, rendering, generation, LOD, or GPU work changes.
