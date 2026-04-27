@@ -57,6 +57,7 @@ describe('ProfileRecorder', () => {
 
     recorder.start(1000, startAllocation)
     recorder.recordFrame({
+      chunkLocalPosition: { x: 1, y: 2, z: 3 },
       chunkCount: 27,
       cpuTimeMs: 2,
       frameTimeMs: 16,
@@ -64,6 +65,14 @@ describe('ProfileRecorder', () => {
       gpuMemoryBytes: 4096,
       gpuTimeMs: null,
       jsHeapBytes: 2048,
+      nearestChunkBoundaryDistance: 1,
+      pendingStreamLoadCount: 4,
+      postRenderStreamCpuTimeMs: 0.5,
+      preRenderCpuTimeMs: 1,
+      previousPostRenderStreamCpuTimeMs: 0.25,
+      previousPostRenderStreamedInChunkCount: 1,
+      previousPostRenderStreamedOutChunkCount: 0,
+      renderSubmitCpuTimeMs: 0.125,
       triangleCount: 20000,
     })
     recorder.recordGpuTime(1.5)
@@ -80,6 +89,7 @@ describe('ProfileRecorder', () => {
     recorder.recordLightGeneration(4, 32)
     recorder.recordMeshGeneration(8, 32)
     recorder.recordFrame({
+      chunkLocalPosition: { x: 30, y: 4, z: 5 },
       chunkCount: 36,
       cpuTimeMs: 4,
       frameTimeMs: 20,
@@ -87,6 +97,14 @@ describe('ProfileRecorder', () => {
       gpuMemoryBytes: 6144,
       gpuTimeMs: null,
       jsHeapBytes: 3072,
+      nearestChunkBoundaryDistance: 2,
+      pendingStreamLoadCount: 2,
+      postRenderStreamCpuTimeMs: 0.75,
+      preRenderCpuTimeMs: 2,
+      previousPostRenderStreamCpuTimeMs: 0.5,
+      previousPostRenderStreamedInChunkCount: 2,
+      previousPostRenderStreamedOutChunkCount: 1,
+      renderSubmitCpuTimeMs: 0.375,
       triangleCount: 26000,
     })
     recorder.recordGpuTime(2.5)
@@ -127,6 +145,42 @@ describe('ProfileRecorder', () => {
         average: 15,
         max: 16,
         min: 14,
+        samples: 2,
+      },
+      preRenderCpuTimeMs: {
+        average: 1.5,
+        max: 2,
+        min: 1,
+        samples: 2,
+      },
+      renderSubmitCpuTimeMs: {
+        average: 0.25,
+        max: 0.375,
+        min: 0.125,
+        samples: 2,
+      },
+      postRenderStreamCpuTimeMs: {
+        average: 0.625,
+        max: 0.75,
+        min: 0.5,
+        samples: 2,
+      },
+      previousPostRenderStreamCpuTimeMs: {
+        average: 0.375,
+        max: 0.5,
+        min: 0.25,
+        samples: 2,
+      },
+      pendingStreamLoadCount: {
+        average: 3,
+        max: 4,
+        min: 2,
+        samples: 2,
+      },
+      nearestChunkBoundaryDistance: {
+        average: 1.5,
+        max: 2,
+        min: 1,
         samples: 2,
       },
       chunkCount: {
@@ -318,7 +372,9 @@ describe('ProfileRecorder', () => {
 
     expect(report?.gpuTimeMs).toBeNull()
     expect(report?.indirectDraw).toBeNull()
+    expect(report?.nearestChunkBoundaryDistance).toBeNull()
     expect(report?.occlusion).toBeNull()
+    expect(report?.pendingStreamLoadCount).toBeNull()
     expect(report?.slowFrames).toHaveLength(1)
     expect(report?.memory.jsHeapBytes).toBeNull()
     expect(report?.meshGenerationChunkCount.average).toBe(0)
@@ -395,6 +451,18 @@ describe('ProfileRecorder', () => {
       'Unaccounted frame ms avg/min/max'
     )
     expect(formatProfileReport(report!)).toContain('Fixed steps avg/min/max')
+    expect(formatProfileReport(report!)).toContain(
+      'CPU phase ms pre/render/post-stream avg/max'
+    )
+    expect(formatProfileReport(report!)).toContain(
+      'Previous post-stream CPU ms avg/max'
+    )
+    expect(formatProfileReport(report!)).toContain(
+      'Stream pending loads avg/min/max'
+    )
+    expect(formatProfileReport(report!)).toContain(
+      'Nearest chunk boundary dist avg/min/max'
+    )
     expect(formatProfileReport(report!)).toContain('Worst frame 1')
     expect(formatProfileReport(report!)).toContain('CPU @60Hz budget avg/max')
     expect(formatProfileReport(report!)).toContain('Indirect draws avg/min/max')
@@ -429,6 +497,7 @@ describe('ProfileRecorder', () => {
 
     for (let frameIndex = 0; frameIndex < 7; frameIndex += 1) {
       recorder.recordFrame({
+        chunkLocalPosition: { x: frameIndex, y: frameIndex + 1, z: 31 },
         chunkCount: 100 + frameIndex,
         cpuTimeMs: frameIndex,
         drawCalls: 10 + frameIndex,
@@ -442,8 +511,16 @@ describe('ProfileRecorder', () => {
         lightGenerationTimeMs: frameIndex + 0.3,
         meshGenerationTimeMs: frameIndex + 0.4,
         meshRebuiltChunkCount: frameIndex + 4,
+        nearestChunkBoundaryDistance: frameIndex,
+        pendingStreamLoadCount: 7 - frameIndex,
         playerChunk: { x: frameIndex, y: 1, z: 2 },
         position: { x: frameIndex * 16, y: 32, z: 48 },
+        postRenderStreamCpuTimeMs: frameIndex + 0.7,
+        preRenderCpuTimeMs: frameIndex + 0.5,
+        previousPostRenderStreamCpuTimeMs: frameIndex + 0.6,
+        previousPostRenderStreamedInChunkCount: frameIndex + 8,
+        previousPostRenderStreamedOutChunkCount: frameIndex + 9,
+        renderSubmitCpuTimeMs: frameIndex + 0.8,
         sdfGeneratedChunkCount: frameIndex + 2,
         sdfGenerationTimeMs: frameIndex + 0.2,
         streamedInChunkCount: frameIndex,
@@ -463,14 +540,23 @@ describe('ProfileRecorder', () => {
       16, 15, 14, 13, 12,
     ])
     expect(report?.slowFrames[0]).toMatchObject({
+      chunkLocalPosition: { x: 6, y: 7, z: 31 },
       drawCalls: 16,
       elapsedSeconds: 6,
       fixedStepCount: 6,
       gpuTimeMs: 4,
       lightGeneratedChunkCount: 9,
       meshRebuiltChunkCount: 10,
+      nearestChunkBoundaryDistance: 6,
+      pendingStreamLoadCount: 1,
       playerChunk: { x: 6, y: 1, z: 2 },
       position: { x: 96, y: 32, z: 48 },
+      postRenderStreamCpuTimeMs: 6.7,
+      preRenderCpuTimeMs: 6.5,
+      previousPostRenderStreamCpuTimeMs: 6.6,
+      previousPostRenderStreamedInChunkCount: 14,
+      previousPostRenderStreamedOutChunkCount: 15,
+      renderSubmitCpuTimeMs: 6.8,
       streamedInChunkCount: 6,
       streamedOutChunkCount: 5,
       unaccountedFrameTimeMs: 6,

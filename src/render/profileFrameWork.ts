@@ -4,6 +4,7 @@ import {
   type ChunkStreamUpdate,
   worldPositionToChunkCoordinates,
 } from '../world/ChunkStreamer.ts'
+import { CHUNK_SIZE } from '../voxel/chunk.ts'
 import { getJsHeapBytes } from './debugWorldHelpers.ts'
 
 type ProfileFrameWork = {
@@ -25,6 +26,13 @@ type ProfileFrameRecordOptions = {
   frameWork: ProfileFrameWork
   gpuMemoryBytes: number
   gpuTimeMs: number | null
+  pendingStreamLoadCount: number
+  postRenderStreamCpuTimeMs: number
+  preRenderCpuTimeMs: number
+  previousPostRenderStreamCpuTimeMs: number
+  previousPostRenderStreamedInChunkCount: number
+  previousPostRenderStreamedOutChunkCount: number
+  renderSubmitCpuTimeMs: number
   recorder: ProfileRecorder
   stats: KisekiDebugStats
 }
@@ -84,12 +92,45 @@ export function addProfileMeshWork(
   frameWork.meshRebuiltChunkCount += result.remeshedChunkCount
 }
 
+function positiveModulo(value: number, divisor: number): number {
+  return ((value % divisor) + divisor) % divisor
+}
+
+function getChunkLocalPosition(position: { x: number; y: number; z: number }): {
+  x: number
+  y: number
+  z: number
+} {
+  return {
+    x: positiveModulo(position.x, CHUNK_SIZE),
+    y: positiveModulo(position.y, CHUNK_SIZE),
+    z: positiveModulo(position.z, CHUNK_SIZE),
+  }
+}
+
+function getNearestBoundaryDistance(localPosition: {
+  x: number
+  y: number
+  z: number
+}): number {
+  return Math.min(
+    localPosition.x,
+    CHUNK_SIZE - localPosition.x,
+    localPosition.y,
+    CHUNK_SIZE - localPosition.y,
+    localPosition.z,
+    CHUNK_SIZE - localPosition.z
+  )
+}
+
 export function recordProfileFrame(
   options: ProfileFrameRecordOptions
 ): ProfileFrameWork {
   const frameTimeMs = options.frameTimeSeconds * 1000
+  const chunkLocalPosition = getChunkLocalPosition(options.stats.position)
 
   options.recorder.recordFrame({
+    chunkLocalPosition,
     chunkCount: options.stats.loadedChunkCount,
     cpuTimeMs: options.stats.cpuTimeMs,
     drawCalls: options.stats.drawCalls,
@@ -103,12 +144,24 @@ export function recordProfileFrame(
     lightGenerationTimeMs: options.frameWork.lightGenerationTimeMs,
     meshGenerationTimeMs: options.frameWork.meshGenerationTimeMs,
     meshRebuiltChunkCount: options.frameWork.meshRebuiltChunkCount,
+    nearestChunkBoundaryDistance:
+      getNearestBoundaryDistance(chunkLocalPosition),
+    pendingStreamLoadCount: options.pendingStreamLoadCount,
     playerChunk: worldPositionToChunkCoordinates(options.stats.position),
     position: {
       x: options.stats.position.x,
       y: options.stats.position.y,
       z: options.stats.position.z,
     },
+    postRenderStreamCpuTimeMs: options.postRenderStreamCpuTimeMs,
+    preRenderCpuTimeMs: options.preRenderCpuTimeMs,
+    previousPostRenderStreamCpuTimeMs:
+      options.previousPostRenderStreamCpuTimeMs,
+    previousPostRenderStreamedInChunkCount:
+      options.previousPostRenderStreamedInChunkCount,
+    previousPostRenderStreamedOutChunkCount:
+      options.previousPostRenderStreamedOutChunkCount,
+    renderSubmitCpuTimeMs: options.renderSubmitCpuTimeMs,
     sdfGeneratedChunkCount: options.frameWork.sdfGeneratedChunkCount,
     sdfGenerationTimeMs: options.frameWork.sdfGenerationTimeMs,
     streamedInChunkCount: options.frameWork.streamedInChunkCount,

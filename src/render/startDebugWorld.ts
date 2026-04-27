@@ -247,7 +247,7 @@ export async function startDebugWorld(
     }
   }
 
-  const syncStreamedWorld = (position: THREE.Vector3): void => {
+  const syncStreamedWorld = (position: THREE.Vector3): ChunkStreamUpdate => {
     const streamUpdate = chunkStreamer.updateFromWorldPosition(position)
 
     if (streamUpdate.didChange) {
@@ -305,6 +305,8 @@ export async function startDebugWorld(
     }
 
     applyStatsToHud()
+
+    return streamUpdate
   }
 
   const initialPosition = setupInitialCameraPose(camera, terrainGenerator)
@@ -716,6 +718,10 @@ export async function startDebugWorld(
   syncStreamedWorld(initialPosition)
   gpuVisibilityTracker.cull(camera, true)
 
+  let previousPostRenderStreamCpuTimeMs = 0
+  let previousPostRenderStreamedInChunkCount = 0
+  let previousPostRenderStreamedOutChunkCount = 0
+
   void renderer.setAnimationLoop((timestampMilliseconds?: number) => {
     const frameStartMs = performance.now()
     const timestampSeconds = (timestampMilliseconds ?? 0) / 1000
@@ -742,11 +748,16 @@ export async function startDebugWorld(
     gpuVisibilityTracker.cull(camera)
     voxelMaterialGallery?.syncToCamera(camera)
 
+    const renderSubmitStartMs = performance.now()
+
     void renderer.render(scene, camera)
+
+    const renderSubmitCpuTimeMs = performance.now() - renderSubmitStartMs
+    const postRenderStreamStartMs = performance.now()
 
     // Stream after submitting the current frame so chunk admission work cannot
     // sit directly in front of the frame the player is trying to see.
-    syncStreamedWorld(
+    const streamUpdate = syncStreamedWorld(
       getDebugChunkStreamingFocusPosition({
         camera,
         inputState,
@@ -755,6 +766,9 @@ export async function startDebugWorld(
         target: streamingFocusPosition,
       })
     )
+    const postRenderStreamCpuTimeMs =
+      performance.now() - postRenderStreamStartMs
+    const preRenderCpuTimeMs = renderSubmitStartMs - frameStartMs
 
     if (frame.frameTimeSeconds > 0) {
       gpuIndirectDrawProfileSampler.tick()
@@ -773,10 +787,21 @@ export async function startDebugWorld(
         frameWork: pendingProfileFrameWork,
         gpuMemoryBytes: renderer.info.memory.total,
         gpuTimeMs: lastGpuFrameTimeMs,
+        pendingStreamLoadCount: chunkStreamer.getPendingLoadCount(),
+        postRenderStreamCpuTimeMs,
+        preRenderCpuTimeMs,
+        previousPostRenderStreamCpuTimeMs,
+        previousPostRenderStreamedInChunkCount,
+        previousPostRenderStreamedOutChunkCount,
+        renderSubmitCpuTimeMs,
         recorder: profileRecorder,
         stats: buildStatsSnapshot(),
       })
     }
+
+    previousPostRenderStreamCpuTimeMs = postRenderStreamCpuTimeMs
+    previousPostRenderStreamedInChunkCount = streamUpdate.loaded.length
+    previousPostRenderStreamedOutChunkCount = streamUpdate.unloaded.length
   })
 
   return () => {
