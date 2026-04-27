@@ -6,7 +6,10 @@ import {
   GpuChunkMesher,
 } from '../gpu/GpuChunkMesher.ts'
 import type { GpuChunkVoxelCache } from '../gpu/GpuChunkVoxelCache.ts'
-import { remeshGpuChunksAtCoords } from '../gpu/remeshGpuChunkAtCoords.ts'
+import {
+  encodeRemeshGpuChunksAtCoords,
+  remeshGpuChunksAtCoords,
+} from '../gpu/remeshGpuChunkAtCoords.ts'
 import type { ChunkStreamUpdate } from '../world/ChunkStreamer.ts'
 import { chunkKey, chunkOrigin, type ChunkCoordinates } from '../world/World.ts'
 import { getChunkCoordsWithCardinalNeighbors } from '../world/worldVoxelCoordinates.ts'
@@ -24,6 +27,7 @@ type SyncStreamedGpuChunkMeshesOptions = {
   chunkMesher: GpuChunkMesher
   chunkMeshMap: Map<string, DisposableMesh>
   chunkMeshSlotMap: Map<number, DisposableMesh>
+  encoder?: GPUCommandEncoder
   gpuVoxelCache: GpuChunkVoxelCache
   getLightSlotIndex?: (coords: ChunkCoordinates) => number | null
   getSdfSlotIndex?: (coords: ChunkCoordinates) => number | null
@@ -152,14 +156,24 @@ export function syncStreamedGpuChunkMeshes(
     )
   }
 
-  const remeshedChunkCount = remeshGpuChunksAtCoords(
-    options.chunkMesher,
-    options.chunkMeshCache,
-    options.gpuVoxelCache,
-    collectStreamAffectedChunkCoords(options.update).filter((coords) =>
-      options.worldHasChunk(coords)
-    )
-  )
+  const affectedChunkCoords = collectStreamAffectedChunkCoords(
+    options.update
+  ).filter((coords) => options.worldHasChunk(coords))
+  const remeshedChunkCount =
+    options.encoder === undefined
+      ? remeshGpuChunksAtCoords(
+          options.chunkMesher,
+          options.chunkMeshCache,
+          options.gpuVoxelCache,
+          affectedChunkCoords
+        )
+      : encodeRemeshGpuChunksAtCoords(
+          options.encoder,
+          options.chunkMesher,
+          options.chunkMeshCache,
+          options.gpuVoxelCache,
+          affectedChunkCoords
+        )
 
   options.worldGroup.updateMatrixWorld(true)
 
@@ -167,7 +181,8 @@ export function syncStreamedGpuChunkMeshes(
     chunkMeshes: [...options.chunkMeshMap.values()],
     gpuComputePassCount:
       remeshedChunkCount * GPU_CHUNK_MESH_COMPUTE_PASSES_PER_CHUNK,
-    gpuSubmissionCount: remeshedChunkCount > 0 ? 1 : 0,
+    gpuSubmissionCount:
+      options.encoder === undefined && remeshedChunkCount > 0 ? 1 : 0,
     meshGenerationTimeMs: performance.now() - rebuildStartMs,
     remeshedChunkCount,
   }

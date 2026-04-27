@@ -57,6 +57,19 @@ export class GpuSdfGenerator {
     voxelHandle: GpuVoxelBufferHandle,
     sdfHandle: GpuSdfBufferHandle
   ): void {
+    const encoder = this.device.createCommandEncoder({
+      label: `${sdfHandle.label}_generation_encoder`,
+    })
+
+    this.encodeGenerateChunk(encoder, voxelHandle, sdfHandle)
+    this.device.queue.submit([encoder.finish()])
+  }
+
+  encodeGenerateChunk(
+    encoder: GPUCommandEncoder,
+    voxelHandle: GpuVoxelBufferHandle,
+    sdfHandle: GpuSdfBufferHandle
+  ): void {
     const bindGroup = this.device.createBindGroup({
       entries: [
         {
@@ -79,9 +92,6 @@ export class GpuSdfGenerator {
       label: `${sdfHandle.label}_generation_bind_group`,
       layout: this.bindGroupLayout,
     })
-    const encoder = this.device.createCommandEncoder({
-      label: `${sdfHandle.label}_generation_encoder`,
-    })
     const pass = encoder.beginComputePass({
       label: `${sdfHandle.label}_generation_pass`,
     })
@@ -92,7 +102,6 @@ export class GpuSdfGenerator {
       Math.ceil(CHUNK_VOLUME / GPU_SDF_GENERATION_WORKGROUP_SIZE)
     )
     pass.end()
-    this.device.queue.submit([encoder.finish()])
   }
 
   async readChunkInfo(sdfHandle: GpuSdfBufferHandle): Promise<GpuSdfChunkInfo> {

@@ -68,7 +68,27 @@ export function remeshGpuChunksAtCoords(
   gpuVoxelCache: GpuChunkVoxelCache,
   chunkCoords: ReadonlyArray<ChunkCoordinates>
 ): number {
-  const jobs = chunkCoords.flatMap((coords) => {
+  const jobs = createGpuChunkRemeshJobs(
+    gpuChunkMeshCache,
+    gpuVoxelCache,
+    chunkCoords
+  )
+
+  if (jobs.length === 0) {
+    return 0
+  }
+
+  gpuChunkMesher.meshChunks(jobs)
+
+  return jobs.length
+}
+
+export function createGpuChunkRemeshJobs(
+  gpuChunkMeshCache: GpuChunkMeshCache,
+  gpuVoxelCache: GpuChunkVoxelCache,
+  chunkCoords: ReadonlyArray<ChunkCoordinates>
+): Array<GpuChunkMeshJob> {
+  return chunkCoords.flatMap((coords) => {
     const job = createGpuChunkRemeshJob(
       gpuChunkMeshCache,
       gpuVoxelCache,
@@ -77,12 +97,26 @@ export function remeshGpuChunksAtCoords(
 
     return job === null ? [] : [job]
   })
+}
+
+export function encodeRemeshGpuChunksAtCoords(
+  encoder: GPUCommandEncoder,
+  gpuChunkMesher: GpuChunkMesher,
+  gpuChunkMeshCache: GpuChunkMeshCache,
+  gpuVoxelCache: GpuChunkVoxelCache,
+  chunkCoords: ReadonlyArray<ChunkCoordinates>
+): number {
+  const jobs = createGpuChunkRemeshJobs(
+    gpuChunkMeshCache,
+    gpuVoxelCache,
+    chunkCoords
+  )
 
   if (jobs.length === 0) {
     return 0
   }
 
-  gpuChunkMesher.meshChunks(jobs)
+  gpuChunkMesher.encodeMeshChunks(encoder, jobs)
 
   return jobs.length
 }

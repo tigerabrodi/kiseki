@@ -56,7 +56,10 @@ import { createGpuMeshCompactionScheduler } from './createGpuMeshCompactionSched
 import { setupInitialCameraPose } from './setupInitialCameraPose.ts'
 import { syncStreamedGpuLightBuffers } from './syncStreamedGpuLightBuffers.ts'
 import { syncStreamedGpuSdfBuffers } from './syncStreamedGpuSdfBuffers.ts'
-import { syncStreamedGpuChunkMeshes } from './syncStreamedGpuChunkMeshes.ts'
+import {
+  syncStreamedGpuChunkMeshes,
+  type SyncStreamedGpuChunkMeshesResult,
+} from './syncStreamedGpuChunkMeshes.ts'
 import { syncStreamedGpuVoxelBuffers } from './syncStreamedGpuVoxelBuffers.ts'
 import {
   type ChunkStreamUpdate,
@@ -202,8 +205,9 @@ export async function startDebugWorld(
   })
 
   const syncGpuChunkMeshes = (
-    update: Pick<ChunkStreamUpdate, 'loaded' | 'unloaded'>
-  ): void => {
+    update: Pick<ChunkStreamUpdate, 'loaded' | 'unloaded'>,
+    encoder?: GPUCommandEncoder
+  ): SyncStreamedGpuChunkMeshesResult | null => {
     const activeGpuChunkMeshCache = gpuChunkMeshCache
     const activeGpuChunkMesher = gpuChunkMesher
     const activeGpuVoxelCache = gpuVoxelCache
@@ -215,7 +219,7 @@ export async function startDebugWorld(
       activeGpuVoxelCache === null ||
       activeMaterial === null
     ) {
-      return
+      return null
     }
 
     const result = syncStreamedGpuChunkMeshes({
@@ -223,6 +227,7 @@ export async function startDebugWorld(
       chunkMeshSlotMap,
       chunkMesher: activeGpuChunkMesher,
       chunkMeshMap,
+      encoder,
       getLightSlotIndex: (coords) =>
         gpuChunkLightCache?.getBuffer(coords)?.slotIndex ?? null,
       getSdfSlotIndex: (coords) =>
@@ -245,15 +250,26 @@ export async function startDebugWorld(
         result.remeshedChunkCount
       )
     }
+
+    return result
   }
 
   const syncStreamedWorld = (position: THREE.Vector3): ChunkStreamUpdate => {
     const streamUpdate = chunkStreamer.updateFromWorldPosition(position)
 
     if (streamUpdate.didChange) {
+      const activeGpuDevice = gpuDevice
+      const gpuAdmissionEncoder =
+        activeGpuDevice !== null && streamUpdate.loaded.length <= 1
+          ? activeGpuDevice.createCommandEncoder({
+              label: 'chunk_stream_admission_encoder',
+            })
+          : undefined
+
       pfw.addProfileStreamWork(pendingProfileFrameWork, streamUpdate)
 
       const voxelSyncResult = syncStreamedGpuVoxelBuffers({
+        encoder: gpuAdmissionEncoder,
         gpuTerrainGenerator,
         gpuVoxelCache,
         update: streamUpdate,
@@ -269,6 +285,7 @@ export async function startDebugWorld(
       }
 
       const sdfSyncResult = syncStreamedGpuSdfBuffers({
+        encoder: gpuAdmissionEncoder,
         gpuSdfCache: gpuChunkSdfCache,
         gpuSdfGenerator,
         gpuVoxelCache,
@@ -285,6 +302,7 @@ export async function startDebugWorld(
       }
 
       const lightSyncResult = syncStreamedGpuLightBuffers({
+        encoder: gpuAdmissionEncoder,
         gpuLightCache: gpuChunkLightCache,
         gpuLightGenerator,
         gpuVoxelCache,
@@ -300,7 +318,25 @@ export async function startDebugWorld(
         )
       }
 
-      syncGpuChunkMeshes(streamUpdate)
+      const meshSyncResult = syncGpuChunkMeshes(
+        streamUpdate,
+        gpuAdmissionEncoder
+      )
+      const gpuAdmissionComputePassCount =
+        voxelSyncResult.gpuComputePassCount +
+        sdfSyncResult.gpuComputePassCount +
+        lightSyncResult.gpuComputePassCount +
+        (meshSyncResult?.gpuComputePassCount ?? 0)
+
+      if (
+        activeGpuDevice !== null &&
+        gpuAdmissionEncoder !== undefined &&
+        gpuAdmissionComputePassCount > 0
+      ) {
+        activeGpuDevice.queue.submit([gpuAdmissionEncoder.finish()])
+        pfw.addProfileGpuStreamSubmissionWork(pendingProfileFrameWork, 1)
+      }
+
       gpuMeshCompactionScheduler.schedule()
     }
 

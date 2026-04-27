@@ -106,4 +106,49 @@ describe('syncStreamedGpuGeneratedChunkBuffers', () => {
     expect(result.gpuSubmissionCount).toBe(1)
     expect(calls).toEqual(['voxel-1:generated-1'])
   })
+
+  it('encodes generated chunks into a shared command encoder without submitting', () => {
+    const generated = new Map<string, GeneratedHandle>()
+    const voxels = new Map<string, GpuVoxelBufferHandle>([
+      ['1,0,0', voxelHandle('voxel-1')],
+    ])
+    const calls: Array<string> = []
+    const encoder = {} as GPUCommandEncoder
+
+    const result = syncStreamedGpuGeneratedChunkBuffers({
+      computePassesPerGeneratedChunk: 3,
+      encoder,
+      gpuGeneratedCache: {
+        getBuffer: (coords) => generated.get(chunkKey(coords)),
+        sync: (update) => {
+          for (const chunkEntry of update.loaded) {
+            generated.set(chunkKey(chunkEntry.coords), {
+              label: `generated-${chunkEntry.coords.x}`,
+            })
+          }
+        },
+      },
+      gpuGenerator: {
+        encodeGenerateChunk: (receivedEncoder, voxel, handle) =>
+          calls.push(
+            `${receivedEncoder === encoder}:${voxel.label}:${handle.label}`
+          ),
+        generateChunk: () => {
+          throw new Error('Expected shared encoder generation')
+        },
+      },
+      gpuVoxelCache: {
+        getBuffer: (coords: ChunkCoordinates) => voxels.get(chunkKey(coords)),
+      },
+      update: {
+        loaded: [entry(1)],
+        unloaded: [],
+      },
+    })
+
+    expect(result.generatedChunkCount).toBe(1)
+    expect(result.gpuComputePassCount).toBe(3)
+    expect(result.gpuSubmissionCount).toBe(0)
+    expect(calls).toEqual(['true:voxel-1:generated-1'])
+  })
 })

@@ -512,6 +512,14 @@ export class GpuChunkMesher {
           : `chunk_mesher_batch_${jobs.length}_encoder`,
     })
 
+    this.encodeMeshChunks(encoder, jobs)
+    this.device.queue.submit([encoder.finish()])
+  }
+
+  encodeMeshChunks(
+    encoder: GPUCommandEncoder,
+    jobs: ReadonlyArray<GpuChunkMeshJob>
+  ): void {
     for (const job of jobs) {
       this.device.queue.writeBuffer(
         job.handle.countsBuffer,
@@ -528,7 +536,5 @@ export class GpuChunkMesher {
       )
       this.encodeMeshChunk(encoder, job)
     }
-
-    this.device.queue.submit([encoder.finish()])
   }
 }

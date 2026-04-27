@@ -11,6 +11,11 @@ type GeneratedChunkBufferCache<Handle> = {
 }
 
 type GeneratedChunkBufferGenerator<Handle> = {
+  encodeGenerateChunk?: (
+    encoder: GPUCommandEncoder,
+    voxelHandle: GpuVoxelBufferHandle,
+    handle: Handle
+  ) => void
   generateChunk(voxelHandle: GpuVoxelBufferHandle, handle: Handle): void
 }
 
@@ -23,6 +28,7 @@ type RegenerateGpuGeneratedChunkBuffersOptions<Handle> = {
 
 type SyncStreamedGpuGeneratedChunkBuffersOptions<Handle> = {
   computePassesPerGeneratedChunk: number
+  encoder?: GPUCommandEncoder
   gpuGeneratedCache: GeneratedChunkBufferCache<Handle> | null
   gpuGenerator: GeneratedChunkBufferGenerator<Handle> | null
   gpuVoxelCache: Pick<GpuChunkVoxelCache, 'getBuffer'> | null
@@ -69,21 +75,48 @@ export function syncStreamedGpuGeneratedChunkBuffers<Handle>(
   options: SyncStreamedGpuGeneratedChunkBuffersOptions<Handle>
 ): SyncStreamedGpuGeneratedChunkBuffersResult {
   const generationStartMs = performance.now()
+  const { gpuGeneratedCache, gpuGenerator, gpuVoxelCache } = options
+  let fallbackSubmissionCount = 0
+  let generatedChunkCount = 0
 
-  options.gpuGeneratedCache?.sync(options.update)
+  gpuGeneratedCache?.sync(options.update)
 
-  const generatedChunkCount = regenerateGpuGeneratedChunkBuffers({
-    chunkCoords: options.update.loaded.map((entry) => entry.coords),
-    gpuGeneratedCache: options.gpuGeneratedCache,
-    gpuGenerator: options.gpuGenerator,
-    gpuVoxelCache: options.gpuVoxelCache,
-  })
+  if (
+    gpuGeneratedCache !== null &&
+    gpuGenerator !== null &&
+    gpuVoxelCache !== null
+  ) {
+    for (const entry of options.update.loaded) {
+      const voxelHandle = gpuVoxelCache.getBuffer(entry.coords)
+      const generatedHandle = gpuGeneratedCache.getBuffer(entry.coords)
+
+      if (voxelHandle === undefined || generatedHandle === undefined) {
+        continue
+      }
+
+      if (
+        options.encoder !== undefined &&
+        gpuGenerator.encodeGenerateChunk !== undefined
+      ) {
+        gpuGenerator.encodeGenerateChunk(
+          options.encoder,
+          voxelHandle,
+          generatedHandle
+        )
+      } else {
+        gpuGenerator.generateChunk(voxelHandle, generatedHandle)
+        fallbackSubmissionCount += 1
+      }
+
+      generatedChunkCount += 1
+    }
+  }
 
   return {
     generatedChunkCount,
     generationTimeMs: performance.now() - generationStartMs,
     gpuComputePassCount:
       generatedChunkCount * options.computePassesPerGeneratedChunk,
-    gpuSubmissionCount: generatedChunkCount,
+    gpuSubmissionCount: fallbackSubmissionCount,
   }
 }

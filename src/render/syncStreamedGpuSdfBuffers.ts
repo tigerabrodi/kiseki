@@ -9,6 +9,7 @@ import {
 } from './syncStreamedGpuGeneratedChunkBuffers.ts'
 
 type SyncStreamedGpuSdfBuffersOptions = {
+  encoder?: GPUCommandEncoder
   gpuSdfCache: GpuChunkSdfCache | null
   gpuSdfGenerator: GpuSdfGenerator | null
   gpuVoxelCache: GpuChunkVoxelCache | null
@@ -41,6 +42,7 @@ export function syncStreamedGpuSdfBuffers(
 ): SyncStreamedGpuSdfBuffersResult {
   const result = syncStreamedGpuGeneratedChunkBuffers({
     computePassesPerGeneratedChunk: 1,
+    encoder: options.encoder,
     gpuGeneratedCache: options.gpuSdfCache,
     gpuGenerator: options.gpuSdfGenerator,
     gpuVoxelCache: options.gpuVoxelCache,

@@ -113,6 +113,19 @@ export class GpuLightGenerator {
     voxelHandle: GpuVoxelBufferHandle,
     lightHandle: GpuLightBufferHandle
   ): void {
+    const encoder = this.device.createCommandEncoder({
+      label: `${lightHandle.label}_generation_encoder`,
+    })
+
+    this.encodeGenerateChunk(encoder, voxelHandle, lightHandle)
+    this.device.queue.submit([encoder.finish()])
+  }
+
+  encodeGenerateChunk(
+    encoder: GPUCommandEncoder,
+    voxelHandle: GpuVoxelBufferHandle,
+    lightHandle: GpuLightBufferHandle
+  ): void {
     const seedBindGroup = this.device.createBindGroup({
       entries: [
         {
@@ -134,9 +147,6 @@ export class GpuLightGenerator {
       ],
       label: `${lightHandle.label}_seed_bind_group`,
       layout: this.seedBindGroupLayout,
-    })
-    const encoder = this.device.createCommandEncoder({
-      label: `${lightHandle.label}_generation_encoder`,
     })
     const workgroupCount = Math.ceil(
       CHUNK_VOLUME / GPU_LIGHT_GENERATION_WORKGROUP_SIZE
@@ -178,8 +188,6 @@ export class GpuLightGenerator {
       pass.dispatchWorkgroups(workgroupCount)
       pass.end()
     }
-
-    this.device.queue.submit([encoder.finish()])
   }
 
   async readChunkInfo(

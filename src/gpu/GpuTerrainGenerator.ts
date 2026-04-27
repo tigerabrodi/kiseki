@@ -128,6 +128,24 @@ export class GpuTerrainGenerator {
     coords: ChunkCoordinates
   ): void {
     this.device.pushErrorScope('validation')
+    const encoder = this.device.createCommandEncoder({
+      label: `${voxelHandle.label}_terrain_generation_encoder`,
+    })
+
+    this.encodeGenerateChunk(encoder, voxelHandle, coords)
+    this.device.queue.submit([encoder.finish()])
+    void this.device.popErrorScope().then((error) => {
+      if (error !== null) {
+        this.lastErrorMessage = error.message
+      }
+    })
+  }
+
+  encodeGenerateChunk(
+    encoder: GPUCommandEncoder,
+    voxelHandle: GpuVoxelBufferHandle,
+    coords: ChunkCoordinates
+  ): void {
     this.device.queue.writeBuffer(
       this.paramBuffer,
       0,
@@ -154,9 +172,6 @@ export class GpuTerrainGenerator {
         },
       ],
     })
-    const encoder = this.device.createCommandEncoder({
-      label: `${voxelHandle.label}_terrain_generation_encoder`,
-    })
     const pass = encoder.beginComputePass({
       label: `${voxelHandle.label}_terrain_generation_pass`,
     })
@@ -169,11 +184,5 @@ export class GpuTerrainGenerator {
       GPU_TERRAIN_GENERATION_DISPATCH_SIZE
     )
     pass.end()
-    this.device.queue.submit([encoder.finish()])
-    void this.device.popErrorScope().then((error) => {
-      if (error !== null) {
-        this.lastErrorMessage = error.message
-      }
-    })
   }
 }

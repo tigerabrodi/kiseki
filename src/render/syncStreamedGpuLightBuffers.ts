@@ -10,6 +10,7 @@ import {
 } from './syncStreamedGpuGeneratedChunkBuffers.ts'
 
 type SyncStreamedGpuLightBuffersOptions = {
+  encoder?: GPUCommandEncoder
   gpuLightCache: GpuChunkLightCache | null
   gpuLightGenerator: GpuLightGenerator | null
   gpuVoxelCache: GpuChunkVoxelCache | null
@@ -42,6 +43,7 @@ export function syncStreamedGpuLightBuffers(
 ): SyncStreamedGpuLightBuffersResult {
   const result = syncStreamedGpuGeneratedChunkBuffers({
     computePassesPerGeneratedChunk: 1 + GPU_LIGHT_PROPAGATION_ITERATIONS,
+    encoder: options.encoder,
     gpuGeneratedCache: options.gpuLightCache,
     gpuGenerator: options.gpuLightGenerator,
     gpuVoxelCache: options.gpuVoxelCache,

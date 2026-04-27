@@ -64,6 +64,13 @@ export function addProfileStreamWork(
   frameWork.streamedOutChunkCount += update.unloaded.length
 }
 
+export function addProfileGpuStreamSubmissionWork(
+  frameWork: ProfileFrameWork,
+  gpuSubmissionCount: number
+): void {
+  frameWork.gpuSubmissionCount += gpuSubmissionCount
+}
+
 export function addProfileTerrainWork(
   frameWork: ProfileFrameWork,
   result: {

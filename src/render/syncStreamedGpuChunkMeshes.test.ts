@@ -141,4 +141,47 @@ describe('syncStreamedGpuChunkMeshes', () => {
     expect(meshChunks).toHaveBeenCalledTimes(1)
     expect(meshChunks.mock.calls[0]?.[0]).toHaveLength(1)
   })
+
+  it('encodes stream remeshes into a shared command encoder without submitting', () => {
+    const coords = { x: 0, y: 0, z: 0 }
+    const entry = { chunk: new Chunk(), coords }
+    const encoder = {} as GPUCommandEncoder
+    const encodeMeshChunks = vi.fn()
+    const meshChunks = vi.fn()
+    const chunkMeshCache = {
+      getMesh: () => createRenderHandle(5),
+      sync: vi.fn(),
+    } as unknown as GpuChunkMeshCache
+    const gpuVoxelCache = {
+      getBuffer: () => ({
+        buffer: createFakeGpuBuffer(),
+        byteLength: 4,
+        byteOffset: 0,
+        label: 'voxel',
+        slotIndex: 0,
+      }),
+    } as unknown as GpuChunkVoxelCache
+
+    const result = syncStreamedGpuChunkMeshes({
+      chunkMeshCache,
+      chunkMesher: { encodeMeshChunks, meshChunks } as never,
+      chunkMeshMap: new Map(),
+      chunkMeshSlotMap: new Map(),
+      encoder,
+      gpuVoxelCache,
+      material: new THREE.MeshStandardNodeMaterial(),
+      update: { loaded: [entry], unloaded: [] },
+      worldGroup: new THREE.Group(),
+      worldHasChunk: (candidate) =>
+        candidate.x === coords.x &&
+        candidate.y === coords.y &&
+        candidate.z === coords.z,
+    })
+
+    expect(encodeMeshChunks).toHaveBeenCalledTimes(1)
+    expect(encodeMeshChunks.mock.calls[0]?.[0]).toBe(encoder)
+    expect(encodeMeshChunks.mock.calls[0]?.[1]).toHaveLength(1)
+    expect(meshChunks).not.toHaveBeenCalled()
+    expect(result.gpuSubmissionCount).toBe(0)
+  })
 })
