@@ -16,4 +16,12 @@ describe('resolveVoxelMaterialLayer', () => {
     expect(resolveVoxelMaterialLayer(3, 'px')).toBe(6)
     expect(resolveVoxelMaterialLayer(3, 'pz')).toBe(6)
   })
+
+  it('maps outdoor feature materials to their atlas layers', () => {
+    expect(resolveVoxelMaterialLayer(6, 'py')).toBe(16)
+    expect(resolveVoxelMaterialLayer(6, 'ny')).toBe(16)
+    expect(resolveVoxelMaterialLayer(6, 'px')).toBe(15)
+    expect(resolveVoxelMaterialLayer(7, 'pz')).toBe(20)
+    expect(resolveVoxelMaterialLayer(8, 'pz')).toBe(3)
+  })
 })

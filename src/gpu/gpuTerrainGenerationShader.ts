@@ -20,6 +20,20 @@ struct TerrainParams {
 @group(0) @binding(0) var<storage, read_write> voxels: array<u32>;
 @group(0) @binding(1) var<uniform> params: TerrainParams;
 
+const TREE_TRUNK_MATERIAL_ID: u32 = 6u;
+const TREE_LEAF_MATERIAL_ID: u32 = 7u;
+const BOULDER_MATERIAL_ID: u32 = 8u;
+const FEATURE_SEED_SALT: u32 = 0x27d4eb2du;
+const FEATURE_CELL_SIZE: i32 = 24;
+const FEATURE_CELL_SIZE_F32: f32 = 24.0;
+const FEATURE_CELL_MARGIN: i32 = 4;
+const FEATURE_CELL_SPAN: u32 = 16u;
+const TREE_SPAWN_THRESHOLD: f32 = 0.24;
+const TREE_MIN_MOISTURE: f32 = 0.3;
+const TREE_CANOPY_RADIUS: i32 = 3;
+const BOULDER_SPAWN_MIN: f32 = 0.24;
+const BOULDER_SPAWN_MAX: f32 = 0.36;
+
 fn fade(value: f32) -> f32 {
   return value * value * value * (value * (value * 6.0 - 15.0) + 10.0);
 }
@@ -42,6 +56,29 @@ fn hash_grid_point(seed_hash: u32, grid_x: i32, grid_z: i32) -> u32 {
     (bitcast<u32>(grid_z) * 0x5f356495u);
 
   return mix_hash(mixed);
+}
+
+fn hash_feature_cell(cell_x: i32, cell_z: i32, salt: u32) -> u32 {
+  return hash_grid_point(
+    mix_hash(params.seeds.x ^ FEATURE_SEED_SALT ^ salt),
+    cell_x,
+    cell_z
+  );
+}
+
+fn hash_unit_float(hash: u32) -> f32 {
+  return f32(hash >> 8u) / 16777216.0;
+}
+
+fn get_feature_cell_anchor(cell_x: i32, cell_z: i32, hash: u32) -> vec2<i32> {
+  let anchor_x = cell_x * FEATURE_CELL_SIZE +
+    FEATURE_CELL_MARGIN +
+    i32(mix_hash(hash ^ 0xa511e9b3u) % FEATURE_CELL_SPAN);
+  let anchor_z = cell_z * FEATURE_CELL_SIZE +
+    FEATURE_CELL_MARGIN +
+    i32(mix_hash(hash ^ 0x63d83595u) % FEATURE_CELL_SPAN);
+
+  return vec2<i32>(anchor_x, anchor_z);
 }
 
 fn gradient(hash: u32) -> vec2<f32> {
@@ -186,6 +223,115 @@ fn get_top_material_id(world_x: i32, world_z: i32, surface_height: i32) -> u32 {
   return 3u;
 }
 
+fn get_tree_feature_material_id(world_x: i32, world_y: i32, world_z: i32) -> u32 {
+  let center_cell_x = i32(floor(f32(world_x) / FEATURE_CELL_SIZE_F32));
+  let center_cell_z = i32(floor(f32(world_z) / FEATURE_CELL_SIZE_F32));
+
+  for (var cell_z = center_cell_z - 1; cell_z <= center_cell_z + 1; cell_z += 1) {
+    for (var cell_x = center_cell_x - 1; cell_x <= center_cell_x + 1; cell_x += 1) {
+      let hash = hash_feature_cell(cell_x, cell_z, 0x7443a1d5u);
+      let spawn_chance = hash_unit_float(hash);
+
+      if (spawn_chance > TREE_SPAWN_THRESHOLD) {
+        continue;
+      }
+
+      let anchor = get_feature_cell_anchor(cell_x, cell_z, hash);
+      let anchor_surface_height = get_surface_height(anchor.x, anchor.y);
+      let anchor_top_material = get_top_material_id(
+        anchor.x,
+        anchor.y,
+        anchor_surface_height
+      );
+      let anchor_moisture = get_moisture(anchor.x, anchor.y);
+      let anchor_slope = get_slope(anchor.x, anchor.y, anchor_surface_height);
+
+      if (
+        anchor_top_material != 3u ||
+        anchor_moisture < TREE_MIN_MOISTURE ||
+        anchor_slope > 1
+      ) {
+        continue;
+      }
+
+      let trunk_height = 5 + i32(mix_hash(hash ^ 0xb5297a4du) % 3u);
+      let dx = world_x - anchor.x;
+      let dz = world_z - anchor.y;
+      let dy = world_y - anchor_surface_height;
+
+      if (dx == 0 && dz == 0 && dy >= 1 && dy <= trunk_height) {
+        return TREE_TRUNK_MATERIAL_ID;
+      }
+
+      let canopy_dy = world_y - (anchor_surface_height + trunk_height);
+      let horizontal_distance = abs(dx) + abs(dz);
+      let is_within_canopy_bounds =
+        abs(dx) <= TREE_CANOPY_RADIUS &&
+        abs(dz) <= TREE_CANOPY_RADIUS &&
+        canopy_dy >= -2 &&
+        canopy_dy <= 2;
+      let is_rounded_canopy =
+        horizontal_distance + max(abs(canopy_dy) - 1, 0) <=
+        TREE_CANOPY_RADIUS + 1;
+
+      if (is_within_canopy_bounds && is_rounded_canopy) {
+        return TREE_LEAF_MATERIAL_ID;
+      }
+    }
+  }
+
+  return 0u;
+}
+
+fn get_boulder_feature_material_id(world_x: i32, world_y: i32, world_z: i32) -> u32 {
+  let center_cell_x = i32(floor(f32(world_x) / FEATURE_CELL_SIZE_F32));
+  let center_cell_z = i32(floor(f32(world_z) / FEATURE_CELL_SIZE_F32));
+
+  for (var cell_z = center_cell_z - 1; cell_z <= center_cell_z + 1; cell_z += 1) {
+    for (var cell_x = center_cell_x - 1; cell_x <= center_cell_x + 1; cell_x += 1) {
+      let hash = hash_feature_cell(cell_x, cell_z, 0x91e10da5u);
+      let spawn_chance = hash_unit_float(hash);
+
+      if (spawn_chance < BOULDER_SPAWN_MIN || spawn_chance > BOULDER_SPAWN_MAX) {
+        continue;
+      }
+
+      let anchor = get_feature_cell_anchor(cell_x, cell_z, hash);
+      let anchor_surface_height = get_surface_height(anchor.x, anchor.y);
+      let anchor_slope = get_slope(anchor.x, anchor.y, anchor_surface_height);
+
+      if (anchor_slope > 1) {
+        continue;
+      }
+
+      let radius_x = f32(2u + (mix_hash(hash ^ 0x68bc21ebu) % 2u));
+      let radius_z = f32(2u + (mix_hash(hash ^ 0x02e5be93u) % 2u));
+      let radius_y = f32(1u + (mix_hash(hash ^ 0x9e3779b9u) % 2u));
+      let dx = f32(world_x - anchor.x) / radius_x;
+      let dy = f32(world_y - anchor_surface_height) / radius_y;
+      let dz = f32(world_z - anchor.y) / radius_z;
+      let is_above_ground = world_y >= anchor_surface_height;
+      let is_inside_boulder = dx * dx + dy * dy + dz * dz <= 1.0;
+
+      if (is_above_ground && is_inside_boulder) {
+        return BOULDER_MATERIAL_ID;
+      }
+    }
+  }
+
+  return 0u;
+}
+
+fn get_outdoor_feature_material_id(world_x: i32, world_y: i32, world_z: i32) -> u32 {
+  let tree_material_id = get_tree_feature_material_id(world_x, world_y, world_z);
+
+  if (tree_material_id != 0u) {
+    return tree_material_id;
+  }
+
+  return get_boulder_feature_material_id(world_x, world_y, world_z);
+}
+
 fn get_material_id(
   world_x: i32,
   world_y: i32,
@@ -235,7 +381,26 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     global_id.y * ${CHUNK_SIZE}u +
     global_id.z * ${CHUNK_SIZE * CHUNK_SIZE}u;
 
-  voxels[flat_index] = get_material_id(world_x, world_y, world_z, surface_height);
+  var feature_material_id = 0u;
+
+  if (world_y >= surface_height && world_y <= surface_height + 12) {
+    feature_material_id = get_outdoor_feature_material_id(
+      world_x,
+      world_y,
+      world_z
+    );
+  }
+
+  if (feature_material_id != 0u) {
+    voxels[flat_index] = feature_material_id;
+  } else {
+    voxels[flat_index] = get_material_id(
+      world_x,
+      world_y,
+      world_z,
+      surface_height
+    );
+  }
 }
 `
 }

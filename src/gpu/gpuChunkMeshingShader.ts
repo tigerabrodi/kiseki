@@ -182,6 +182,19 @@ fn resolveMaterialLayer(materialId: u32, faceDirection: u32) -> u32 {
     case 5u: {
       return 1u;
     }
+    case 6u: {
+      if (faceDirection == 2u || faceDirection == 3u) {
+        return 16u;
+      }
+
+      return 15u;
+    }
+    case 7u: {
+      return 20u;
+    }
+    case 8u: {
+      return 3u;
+    }
     default: {
       return 0u;
     }

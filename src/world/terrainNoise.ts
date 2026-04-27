@@ -25,6 +25,7 @@ const DEFAULT_RIDGE_AMPLITUDE = 7
 const DEFAULT_RIDGE_FREQUENCY = 0.028
 const DEFAULT_VALLEY_DEPTH = 5
 const DETAIL_SEED_SALT = 0x9e3779b9
+const FEATURE_SEED_SALT = 0x27d4eb2d
 const MOISTURE_SEED_SALT = 0x85ebca6b
 const RIDGE_SEED_SALT = 0xc2b2ae35
 const RIDGE_SHARPNESS = 3.1
@@ -35,6 +36,22 @@ const DRY_SAND_MOISTURE_THRESHOLD = 0.21
 const DRY_SAND_HEIGHT_OFFSET = 3
 const SUBSURFACE_DEPTH = 4
 const TERRACE_HEIGHT_STEP = 2
+
+export const TREE_TRUNK_MATERIAL_ID = 6
+export const TREE_LEAF_MATERIAL_ID = 7
+export const BOULDER_MATERIAL_ID = 8
+
+const FEATURE_CELL_SIZE = 24
+const FEATURE_CELL_MARGIN = 4
+const FEATURE_CELL_SPAN = FEATURE_CELL_SIZE - FEATURE_CELL_MARGIN * 2
+const FEATURE_NEIGHBOR_RADIUS = 1
+const TREE_SPAWN_THRESHOLD = 0.24
+const TREE_MIN_MOISTURE = 0.3
+const TREE_MAX_SLOPE = 1
+const TREE_CANOPY_RADIUS = 3
+const BOULDER_SPAWN_MIN = 0.24
+const BOULDER_SPAWN_MAX = 0.36
+const BOULDER_MAX_SLOPE = 1
 
 export type TerrainGenerationOptions = {
   baseHeight?: number
@@ -106,6 +123,19 @@ function hashGridPoint(seedHash: number, gridX: number, gridZ: number): number {
     seedHash ^
       (Math.imul(gridX | 0, 0x1f123bb5) >>> 0) ^
       (Math.imul(gridZ | 0, 0x5f356495) >>> 0)
+  )
+}
+
+function hashFeatureCell(
+  settings: TerrainGenerationSettings,
+  cellX: number,
+  cellZ: number,
+  salt: number
+): number {
+  return hashGridPoint(
+    mixHash(settings.seedHash ^ FEATURE_SEED_SALT ^ salt),
+    cellX,
+    cellZ
   )
 }
 
@@ -315,6 +345,184 @@ function getTopTerrainMaterialId(
   return 3
 }
 
+function hashUnitFloat(hash: number): number {
+  return (hash >>> 8) / 0x01000000
+}
+
+function getFeatureCellAnchor(
+  cellX: number,
+  cellZ: number,
+  hash: number
+): { x: number; z: number } {
+  return {
+    x:
+      cellX * FEATURE_CELL_SIZE +
+      FEATURE_CELL_MARGIN +
+      (mixHash(hash ^ 0xa511e9b3) % FEATURE_CELL_SPAN),
+    z:
+      cellZ * FEATURE_CELL_SIZE +
+      FEATURE_CELL_MARGIN +
+      (mixHash(hash ^ 0x63d83595) % FEATURE_CELL_SPAN),
+  }
+}
+
+function isTreeAnchorValid(
+  anchorX: number,
+  anchorZ: number,
+  settings: TerrainGenerationSettings
+): { isValid: boolean; surfaceSample: TerrainSurfaceSample } {
+  const surfaceSample = getTerrainSurfaceSampleAt(anchorX, anchorZ, settings)
+
+  return {
+    isValid:
+      getTopTerrainMaterialId(surfaceSample, settings) === 3 &&
+      surfaceSample.moisture >= TREE_MIN_MOISTURE &&
+      surfaceSample.slope <= TREE_MAX_SLOPE,
+    surfaceSample,
+  }
+}
+
+function getTreeFeatureMaterialId(
+  worldX: number,
+  worldY: number,
+  worldZ: number,
+  settings: TerrainGenerationSettings
+): number {
+  const centerCellX = Math.floor(worldX / FEATURE_CELL_SIZE)
+  const centerCellZ = Math.floor(worldZ / FEATURE_CELL_SIZE)
+
+  for (
+    let cellZ = centerCellZ - FEATURE_NEIGHBOR_RADIUS;
+    cellZ <= centerCellZ + FEATURE_NEIGHBOR_RADIUS;
+    cellZ += 1
+  ) {
+    for (
+      let cellX = centerCellX - FEATURE_NEIGHBOR_RADIUS;
+      cellX <= centerCellX + FEATURE_NEIGHBOR_RADIUS;
+      cellX += 1
+    ) {
+      const hash = hashFeatureCell(settings, cellX, cellZ, 0x7443a1d5)
+      const spawnChance = hashUnitFloat(hash)
+
+      if (spawnChance > TREE_SPAWN_THRESHOLD) {
+        continue
+      }
+
+      const anchor = getFeatureCellAnchor(cellX, cellZ, hash)
+      const { isValid, surfaceSample } = isTreeAnchorValid(
+        anchor.x,
+        anchor.z,
+        settings
+      )
+
+      if (!isValid) {
+        continue
+      }
+
+      const trunkHeight = 5 + (mixHash(hash ^ 0xb5297a4d) % 3)
+      const dx = worldX - anchor.x
+      const dz = worldZ - anchor.z
+      const dy = worldY - surfaceSample.surfaceHeight
+
+      if (dx === 0 && dz === 0 && dy >= 1 && dy <= trunkHeight) {
+        return TREE_TRUNK_MATERIAL_ID
+      }
+
+      const canopyDy = worldY - (surfaceSample.surfaceHeight + trunkHeight)
+      const horizontalDistance = Math.abs(dx) + Math.abs(dz)
+      const isWithinCanopyBounds =
+        Math.abs(dx) <= TREE_CANOPY_RADIUS &&
+        Math.abs(dz) <= TREE_CANOPY_RADIUS &&
+        canopyDy >= -2 &&
+        canopyDy <= 2
+      const isRoundedCanopy =
+        horizontalDistance + Math.max(Math.abs(canopyDy) - 1, 0) <=
+        TREE_CANOPY_RADIUS + 1
+
+      if (isWithinCanopyBounds && isRoundedCanopy) {
+        return TREE_LEAF_MATERIAL_ID
+      }
+    }
+  }
+
+  return 0
+}
+
+function getBoulderFeatureMaterialId(
+  worldX: number,
+  worldY: number,
+  worldZ: number,
+  settings: TerrainGenerationSettings
+): number {
+  const centerCellX = Math.floor(worldX / FEATURE_CELL_SIZE)
+  const centerCellZ = Math.floor(worldZ / FEATURE_CELL_SIZE)
+
+  for (
+    let cellZ = centerCellZ - FEATURE_NEIGHBOR_RADIUS;
+    cellZ <= centerCellZ + FEATURE_NEIGHBOR_RADIUS;
+    cellZ += 1
+  ) {
+    for (
+      let cellX = centerCellX - FEATURE_NEIGHBOR_RADIUS;
+      cellX <= centerCellX + FEATURE_NEIGHBOR_RADIUS;
+      cellX += 1
+    ) {
+      const hash = hashFeatureCell(settings, cellX, cellZ, 0x91e10da5)
+      const spawnChance = hashUnitFloat(hash)
+
+      if (spawnChance < BOULDER_SPAWN_MIN || spawnChance > BOULDER_SPAWN_MAX) {
+        continue
+      }
+
+      const anchor = getFeatureCellAnchor(cellX, cellZ, hash)
+      const surfaceSample = getTerrainSurfaceSampleAt(
+        anchor.x,
+        anchor.z,
+        settings
+      )
+
+      if (surfaceSample.slope > BOULDER_MAX_SLOPE) {
+        continue
+      }
+
+      const radiusX = 2 + (mixHash(hash ^ 0x68bc21eb) % 2)
+      const radiusZ = 2 + (mixHash(hash ^ 0x02e5be93) % 2)
+      const radiusY = 1 + (mixHash(hash ^ 0x9e3779b9) % 2)
+      const dx = (worldX - anchor.x) / radiusX
+      const dy = (worldY - surfaceSample.surfaceHeight) / radiusY
+      const dz = (worldZ - anchor.z) / radiusZ
+      const isAboveGround = worldY >= surfaceSample.surfaceHeight
+      const isInsideBoulder = dx * dx + dy * dy + dz * dz <= 1.0
+
+      if (isAboveGround && isInsideBoulder) {
+        return BOULDER_MATERIAL_ID
+      }
+    }
+  }
+
+  return 0
+}
+
+export function getOutdoorFeatureMaterialId(
+  worldX: number,
+  worldY: number,
+  worldZ: number,
+  settings: TerrainGenerationSettings
+): number {
+  const treeMaterialId = getTreeFeatureMaterialId(
+    worldX,
+    worldY,
+    worldZ,
+    settings
+  )
+
+  if (treeMaterialId !== 0) {
+    return treeMaterialId
+  }
+
+  return getBoulderFeatureMaterialId(worldX, worldY, worldZ, settings)
+}
+
 export function getTerrainMaterialId(
   worldY: number,
   surfaceSample: TerrainSurfaceSample,
@@ -351,12 +559,20 @@ export function fillChunkWithTerrain(
       const worldX = coords.x * CHUNK_SIZE + x
       const worldZ = coords.z * CHUNK_SIZE + z
       const surfaceSample = getTerrainSurfaceSampleAt(worldX, worldZ, settings)
+      const minFeatureY = surfaceSample.surfaceHeight
+      const maxFeatureY = surfaceSample.surfaceHeight + 12
 
       for (let y = 0; y < CHUNK_SIZE; y += 1) {
         const worldY = coords.y * CHUNK_SIZE + y
+        const featureMaterialId =
+          worldY >= minFeatureY && worldY <= maxFeatureY
+            ? getOutdoorFeatureMaterialId(worldX, worldY, worldZ, settings)
+            : 0
         const materialId = getTerrainMaterialId(worldY, surfaceSample, settings)
 
-        if (materialId !== 0) {
+        if (featureMaterialId !== 0) {
+          chunk.set(x, y, z, featureMaterialId)
+        } else if (materialId !== 0) {
           chunk.set(x, y, z, materialId)
         }
       }

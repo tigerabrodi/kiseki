@@ -2,10 +2,10 @@ export function createDebugWorldMarkup(): string {
   return `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Pre-Refactor 1i</p>
-        <h1 class="title">Outdoor Worldgen</h1>
+        <p class="eyebrow">Kiseki / Pre-Refactor 1j</p>
+        <h1 class="title">Outdoor Features</h1>
         <p class="subtitle">
-          Terrain now mixes ridges, valleys, flatter shelves, slope stone, grassy tops, and sandy lowlands from the same deterministic seed on CPU and GPU.
+          Terrain now grows deterministic tree and boulder stamps directly in the GPU worldgen pass, while CPU parity keeps chunk boundaries honest.
         </p>
         <dl class="stats">
           <div class="stats-card">
