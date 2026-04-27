@@ -2,10 +2,10 @@ export function createDebugWorldMarkup(): string {
   return `
     <main class="app-shell">
       <div class="hud">
-        <p class="eyebrow">Kiseki / Step 31</p>
-        <h1 class="title">GPU Cave Culling</h1>
+        <p class="eyebrow">Kiseki / Pre-Refactor 1i</p>
+        <h1 class="title">Outdoor Worldgen</h1>
         <p class="subtitle">
-          Chunk reachability now flood-fills on the GPU from the player chunk before frustum and indirect draw masking decide what actually renders.
+          Terrain now mixes ridges, valleys, flatter shelves, slope stone, grassy tops, and sandy lowlands from the same deterministic seed on CPU and GPU.
         </p>
         <dl class="stats">
           <div class="stats-card">
@@ -128,7 +128,7 @@ export function createDebugWorldMarkup(): string {
           <div class="look-grid" data-voxel-look-controls></div>
         </section>
         <pre class="profile-report" data-profile-report>
-Press Start Profile Run, fly through open terrain and dense slopes, then stop to capture a fresh GPU occlusion run.
+Press Start Profile Run, fly through open terrain and dense slopes, then stop to capture a fresh outdoor worldgen run.
         </pre>
       </div>
       <div class="viewport" data-viewport></div>

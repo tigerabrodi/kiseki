@@ -32,11 +32,15 @@ function createTerrainParamData(
   floatView[8] = settings.detailFrequency
   floatView[9] = settings.detailOffsetX
   floatView[10] = settings.detailOffsetZ
-  floatView[11] = 0
-  uintView[12] = settings.seedHash
-  uintView[13] = settings.detailSeedHash
-  uintView[14] = 0
-  uintView[15] = 0
+  floatView[11] = settings.ridgeAmplitude
+  floatView[12] = settings.ridgeFrequency
+  floatView[13] = settings.moistureFrequency
+  floatView[14] = settings.plateauStrength
+  floatView[15] = settings.valleyDepth
+  uintView[16] = settings.seedHash
+  uintView[17] = settings.detailSeedHash
+  uintView[18] = settings.ridgeSeedHash
+  uintView[19] = settings.moistureSeedHash
 
   return buffer
 }

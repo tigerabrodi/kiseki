@@ -1,7 +1,7 @@
 import { CHUNK_SIZE } from '../voxel/chunk.ts'
 
 export const GPU_TERRAIN_GENERATION_WORKGROUP_SIZE = 4
-export const GPU_TERRAIN_GENERATION_PARAM_WORD_COUNT = 16
+export const GPU_TERRAIN_GENERATION_PARAM_WORD_COUNT = 20
 export const GPU_TERRAIN_GENERATION_PARAM_BYTE_LENGTH =
   GPU_TERRAIN_GENERATION_PARAM_WORD_COUNT * Uint32Array.BYTES_PER_ELEMENT
 export const GPU_TERRAIN_GENERATION_DISPATCH_SIZE =
@@ -13,6 +13,7 @@ struct TerrainParams {
   chunk_coords: vec4<i32>,
   scalars_a: vec4<f32>,
   scalars_b: vec4<f32>,
+  scalars_c: vec4<f32>,
   seeds: vec4<u32>,
 }
 
@@ -104,6 +105,23 @@ fn sample_gradient_noise_2d(sample_x: f32, sample_z: f32, seed_hash: u32) -> f32
   );
 }
 
+fn sample_normalized_noise_2d(
+  world_x: i32,
+  world_z: i32,
+  frequency: f32,
+  seed_hash: u32
+) -> f32 {
+  return clamp(
+    0.5 + sample_gradient_noise_2d(
+      f32(world_x) * frequency,
+      f32(world_z) * frequency,
+      seed_hash
+    ),
+    0.0,
+    1.0
+  );
+}
+
 fn get_surface_height(world_x: i32, world_z: i32) -> i32 {
   let continental_noise = sample_gradient_noise_2d(
     f32(world_x) * params.scalars_a.w,
@@ -115,14 +133,65 @@ fn get_surface_height(world_x: i32, world_z: i32) -> i32 {
     f32(world_z) * params.scalars_b.x + params.scalars_b.z,
     params.seeds.y
   );
-  let height = params.scalars_a.x +
+  let ridge_noise = sample_gradient_noise_2d(
+    f32(world_x) * params.scalars_c.x,
+    f32(world_z) * params.scalars_c.x,
+    params.seeds.z
+  );
+  let ridge = clamp(1.0 - abs(ridge_noise) * 3.1, 0.0, 1.0);
+  let valley = clamp(-continental_noise * 1.45, 0.0, 1.0);
+  let raw_height = params.scalars_a.x +
     continental_noise * params.scalars_a.y +
-    detail_noise * params.scalars_a.z;
+    detail_noise * params.scalars_a.z +
+    ridge * params.scalars_b.w -
+    valley * params.scalars_c.w;
+  let terrace_height = floor(raw_height / 2.0 + 0.5) * 2.0;
+  let height = mix(raw_height, terrace_height, params.scalars_c.z);
 
   return i32(floor(height));
 }
 
-fn get_material_id(world_y: i32, surface_height: i32) -> u32 {
+fn get_moisture(world_x: i32, world_z: i32) -> f32 {
+  return sample_normalized_noise_2d(
+    world_x,
+    world_z,
+    params.scalars_c.y,
+    params.seeds.w
+  );
+}
+
+fn get_slope(world_x: i32, world_z: i32, surface_height: i32) -> i32 {
+  let east_height = get_surface_height(world_x + 1, world_z);
+  let south_height = get_surface_height(world_x, world_z + 1);
+
+  return max(abs(surface_height - east_height), abs(surface_height - south_height));
+}
+
+fn get_top_material_id(world_x: i32, world_z: i32, surface_height: i32) -> u32 {
+  let moisture = get_moisture(world_x, world_z);
+  let slope = get_slope(world_x, world_z, surface_height);
+  let is_lowland = f32(surface_height) <= params.scalars_a.x - 3.0;
+  let is_dry_low_grass =
+    moisture <= 0.21 &&
+    f32(surface_height) <= params.scalars_a.x + 3.0;
+
+  if (slope >= 2) {
+    return 1u;
+  }
+
+  if ((is_lowland && moisture >= 0.42) || is_dry_low_grass) {
+    return 4u;
+  }
+
+  return 3u;
+}
+
+fn get_material_id(
+  world_x: i32,
+  world_y: i32,
+  world_z: i32,
+  surface_height: i32
+) -> u32 {
   if (world_y > surface_height) {
     return 0u;
   }
@@ -130,10 +199,14 @@ fn get_material_id(world_y: i32, surface_height: i32) -> u32 {
   let depth = surface_height - world_y;
 
   if (depth == 0) {
-    return 3u;
+    return get_top_material_id(world_x, world_z, surface_height);
   }
 
   if (depth < 4) {
+    if (get_top_material_id(world_x, world_z, surface_height) == 4u) {
+      return 4u;
+    }
+
     return 2u;
   }
 
@@ -162,7 +235,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     global_id.y * ${CHUNK_SIZE}u +
     global_id.z * ${CHUNK_SIZE * CHUNK_SIZE}u;
 
-  voxels[flat_index] = get_material_id(world_y, surface_height);
+  voxels[flat_index] = get_material_id(world_x, world_y, world_z, surface_height);
 }
 `
 }
