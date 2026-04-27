@@ -184,4 +184,81 @@ describe('syncStreamedGpuChunkMeshes', () => {
     expect(meshChunks).not.toHaveBeenCalled()
     expect(result.gpuSubmissionCount).toBe(0)
   })
+
+  it('can remesh streamed chunks before deferring neighbor seam remeshes', () => {
+    const coords = { x: 0, y: 0, z: 0 }
+    const entry = { chunk: new Chunk(), coords }
+    const meshChunks = vi.fn()
+    const chunkMeshCache = {
+      getMesh: () => createRenderHandle(6),
+      sync: vi.fn(),
+    } as unknown as GpuChunkMeshCache
+    const gpuVoxelCache = {
+      getBuffer: () => ({
+        buffer: createFakeGpuBuffer(),
+        byteLength: 4,
+        byteOffset: 0,
+        label: 'voxel',
+        slotIndex: 0,
+      }),
+    } as unknown as GpuChunkVoxelCache
+
+    syncStreamedGpuChunkMeshes({
+      chunkMeshCache,
+      chunkMesher: { meshChunks } as never,
+      chunkMeshMap: new Map(),
+      chunkMeshSlotMap: new Map(),
+      gpuVoxelCache,
+      includeNeighborRemeshes: false,
+      material: new THREE.MeshStandardNodeMaterial(),
+      update: { loaded: [entry], unloaded: [] },
+      worldGroup: new THREE.Group(),
+      worldHasChunk: (candidate) =>
+        candidate.y === 0 &&
+        candidate.z === 0 &&
+        candidate.x >= -1 &&
+        candidate.x <= 1,
+    })
+
+    expect(meshChunks).toHaveBeenCalledTimes(1)
+    expect(meshChunks.mock.calls[0]?.[0]).toHaveLength(1)
+  })
+
+  it('accepts explicit deferred remesh coordinates', () => {
+    const coords = { x: 0, y: 0, z: 0 }
+    const meshChunks = vi.fn()
+    const chunkMeshCache = {
+      getMesh: () => createRenderHandle(7),
+      sync: vi.fn(),
+    } as unknown as GpuChunkMeshCache
+    const gpuVoxelCache = {
+      getBuffer: () => ({
+        buffer: createFakeGpuBuffer(),
+        byteLength: 4,
+        byteOffset: 0,
+        label: 'voxel',
+        slotIndex: 0,
+      }),
+    } as unknown as GpuChunkVoxelCache
+
+    syncStreamedGpuChunkMeshes({
+      chunkMeshCache,
+      chunkMesher: { meshChunks } as never,
+      chunkMeshMap: new Map(),
+      chunkMeshSlotMap: new Map(),
+      extraRemeshChunkCoords: [coords],
+      gpuVoxelCache,
+      includeNeighborRemeshes: false,
+      material: new THREE.MeshStandardNodeMaterial(),
+      update: { loaded: [], unloaded: [] },
+      worldGroup: new THREE.Group(),
+      worldHasChunk: (candidate) =>
+        candidate.x === coords.x &&
+        candidate.y === coords.y &&
+        candidate.z === coords.z,
+    })
+
+    expect(meshChunks).toHaveBeenCalledTimes(1)
+    expect(meshChunks.mock.calls[0]?.[0]).toHaveLength(1)
+  })
 })

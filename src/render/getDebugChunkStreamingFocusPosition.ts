@@ -27,10 +27,7 @@ export function getDebugChunkStreamingFocusPosition({
 
   target.copy(position)
 
-  if (
-    leadDistance <= 0 ||
-    (movement.forward === 0 && movement.right === 0 && movement.up === 0)
-  ) {
+  if (leadDistance <= 0 || (movement.forward === 0 && movement.right === 0)) {
     return target
   }
 
@@ -47,7 +44,6 @@ export function getDebugChunkStreamingFocusPosition({
   STREAMING_OFFSET.copy(RIGHT)
     .multiplyScalar(movement.right)
     .addScaledVector(FORWARD, movement.forward)
-    .addScaledVector(camera.up, movement.up)
 
   if (STREAMING_OFFSET.lengthSq() === 0) {
     return target

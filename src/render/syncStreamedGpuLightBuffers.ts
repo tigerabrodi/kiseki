@@ -42,7 +42,9 @@ export function syncStreamedGpuLightBuffers(
   options: SyncStreamedGpuLightBuffersOptions
 ): SyncStreamedGpuLightBuffersResult {
   const result = syncStreamedGpuGeneratedChunkBuffers({
-    computePassesPerGeneratedChunk: 1 + GPU_LIGHT_PROPAGATION_ITERATIONS,
+    computePassesPerGeneratedChunk:
+      options.gpuLightGenerator?.getComputePassesPerChunk() ??
+      1 + GPU_LIGHT_PROPAGATION_ITERATIONS,
     encoder: options.encoder,
     gpuGeneratedCache: options.gpuLightCache,
     gpuGenerator: options.gpuLightGenerator,

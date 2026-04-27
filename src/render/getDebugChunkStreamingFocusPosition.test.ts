@@ -84,4 +84,43 @@ describe('getDebugChunkStreamingFocusPosition', () => {
     expect(focus.x).toBeCloseTo(1)
     expect(focus.z).toBeCloseTo(-1)
   })
+
+  it('does not prefetch whole vertical chunk layers during fly movement', () => {
+    const camera = new THREE.PerspectiveCamera()
+    const position = new THREE.Vector3(10, 20, 30)
+    camera.updateMatrixWorld()
+
+    const focus = getDebugChunkStreamingFocusPosition({
+      camera,
+      inputState: {
+        ...idleInput,
+        down: true,
+      },
+      leadDistance: 64,
+      position,
+    })
+
+    expect(focus.toArray()).toEqual([10, 20, 30])
+  })
+
+  it('keeps horizontal prefetch stable while descending', () => {
+    const camera = new THREE.PerspectiveCamera()
+    const position = new THREE.Vector3(10, 20, 30)
+    camera.updateMatrixWorld()
+
+    const focus = getDebugChunkStreamingFocusPosition({
+      camera,
+      inputState: {
+        ...idleInput,
+        down: true,
+        forward: true,
+      },
+      leadDistance: 32,
+      position,
+    })
+
+    expect(focus.x).toBeCloseTo(10)
+    expect(focus.y).toBeCloseTo(20)
+    expect(focus.z).toBeCloseTo(-2)
+  })
 })

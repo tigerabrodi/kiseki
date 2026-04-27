@@ -24,7 +24,7 @@ import {
   formatProfileReport,
   ProfileRecorder,
 } from '../profiling/ProfileRecorder.ts'
-import { CHUNK_SIZE, type Chunk } from '../voxel/chunk.ts'
+import type { Chunk } from '../voxel/chunk.ts'
 import { advanceChunkRevealFactors } from './chunkReveal.ts'
 import { createDebugChunkStreamer } from './createDebugChunkStreamer.ts'
 import { createDebugHudUpdater } from './createDebugHudUpdater.ts'
@@ -32,6 +32,7 @@ import { createDebugWorldMarkup } from './createDebugWorldMarkup.ts'
 import { createDebugWorldGpuRuntime } from './createDebugWorldGpuRuntime.ts'
 import { createDebugWorldScene } from './createDebugWorldScene.ts'
 import { createDebugFlyKeyHandlers } from './createDebugFlyKeyHandlers.ts'
+import { createEmptyChunkStreamUpdate } from './createEmptyChunkStreamUpdate.ts'
 import { createVoxelEditHandler } from './createVoxelEditHandler.ts'
 import { createVoxelLookController } from './createVoxelLookController.ts'
 import { createGpuIndirectDrawProfileSampler } from './createGpuIndirectDrawProfileSampler.ts'
@@ -65,13 +66,14 @@ import {
   type ChunkStreamUpdate,
   worldPositionToChunkCoordinates,
 } from '../world/ChunkStreamer.ts'
+import type { ChunkCoordinates } from '../world/World.ts'
 import { VoxelOverrideStore } from '../world/VoxelOverrideStore.ts'
 import { TerrainGenerator } from '../world/TerrainGenerator.ts'
 import { advanceDebugWorldCamera } from './advanceDebugWorldCamera.ts'
+import { DeferredChunkRemeshQueue } from './deferredChunkRemeshQueue.ts'
+import { flushDeferredChunkRemeshes } from './flushDeferredChunkRemeshes.ts'
 import * as pfw from './profileFrameWork.ts'
-
-const CHUNK_STREAMING_LEAD_DISTANCE = CHUNK_SIZE * 2
-const GPU_TIMESTAMP_QUERY_PARAM = 'gpu-timestamps'
+import { readShouldTrackGpuTimestamps } from './readShouldTrackGpuTimestamps.ts'
 
 export async function startDebugWorld(
   root: HTMLElement
@@ -96,9 +98,7 @@ export async function startDebugWorld(
     }
   }
 
-  const shouldTrackGpuTimestamps = new URLSearchParams(
-    window.location.search
-  ).has(GPU_TIMESTAMP_QUERY_PARAM)
+  const shouldTrackGpuTimestamps = readShouldTrackGpuTimestamps()
   const { camera, canvas, lightingRig, renderer, scene } =
     createDebugWorldScene(viewport, {
       trackGpuTimestamps: shouldTrackGpuTimestamps,
@@ -166,6 +166,7 @@ export async function startDebugWorld(
     getGpuVoxelCache: () => gpuVoxelCache,
     getPlayerMeshSlotIndex: () => getCurrentPlayerMeshSlotIndex(),
   })
+  const deferredChunkRemeshQueue = new DeferredChunkRemeshQueue()
 
   const gpuMeshStatsRefresher = createGpuMeshStatsRefresher({
     getChunkEntries: () => chunkStreamer.world.entries(),
@@ -206,7 +207,11 @@ export async function startDebugWorld(
 
   const syncGpuChunkMeshes = (
     update: Pick<ChunkStreamUpdate, 'loaded' | 'unloaded'>,
-    encoder?: GPUCommandEncoder
+    encoder?: GPUCommandEncoder,
+    options: {
+      extraRemeshChunkCoords?: Array<ChunkCoordinates>
+      includeNeighborRemeshes?: boolean
+    } = {}
   ): SyncStreamedGpuChunkMeshesResult | null => {
     const activeGpuChunkMeshCache = gpuChunkMeshCache
     const activeGpuChunkMesher = gpuChunkMesher
@@ -228,11 +233,13 @@ export async function startDebugWorld(
       chunkMesher: activeGpuChunkMesher,
       chunkMeshMap,
       encoder,
+      extraRemeshChunkCoords: options.extraRemeshChunkCoords,
       getLightSlotIndex: (coords) =>
         gpuChunkLightCache?.getBuffer(coords)?.slotIndex ?? null,
       getSdfSlotIndex: (coords) =>
         gpuChunkSdfCache?.getBuffer(coords)?.slotIndex ?? null,
       gpuVoxelCache: activeGpuVoxelCache,
+      includeNeighborRemeshes: options.includeNeighborRemeshes,
       material: activeMaterial,
       update,
       worldGroup,
@@ -320,7 +327,10 @@ export async function startDebugWorld(
 
       const meshSyncResult = syncGpuChunkMeshes(
         streamUpdate,
-        gpuAdmissionEncoder
+        gpuAdmissionEncoder,
+        {
+          includeNeighborRemeshes: false,
+        }
       )
       const gpuAdmissionComputePassCount =
         voxelSyncResult.gpuComputePassCount +
@@ -337,6 +347,9 @@ export async function startDebugWorld(
         pfw.addProfileGpuStreamSubmissionWork(pendingProfileFrameWork, 1)
       }
 
+      deferredChunkRemeshQueue.queueNeighbors(streamUpdate, (coords) =>
+        chunkStreamer.world.hasChunk(coords)
+      )
       gpuMeshCompactionScheduler.schedule()
     }
 
@@ -754,6 +767,7 @@ export async function startDebugWorld(
   syncStreamedWorld(initialPosition)
   gpuVisibilityTracker.cull(camera, true)
 
+  let lastPostRenderStreamSyncMs = -Infinity
   let previousPostRenderStreamCpuTimeMs = 0
   let previousPostRenderStreamedInChunkCount = 0
   let previousPostRenderStreamedOutChunkCount = 0
@@ -790,18 +804,38 @@ export async function startDebugWorld(
 
     const renderSubmitCpuTimeMs = performance.now() - renderSubmitStartMs
     const postRenderStreamStartMs = performance.now()
+    const shouldRunStreamUpdate =
+      postRenderStreamStartMs - lastPostRenderStreamSyncMs >= 50
 
     // Stream after submitting the current frame so chunk admission work cannot
     // sit directly in front of the frame the player is trying to see.
-    const streamUpdate = syncStreamedWorld(
-      getDebugChunkStreamingFocusPosition({
-        camera,
-        inputState,
-        leadDistance: CHUNK_STREAMING_LEAD_DISTANCE,
-        position: currentCameraPosition,
-        target: streamingFocusPosition,
+    const streamUpdate = shouldRunStreamUpdate
+      ? syncStreamedWorld(
+          getDebugChunkStreamingFocusPosition({
+            camera,
+            inputState,
+            leadDistance: 64,
+            position: currentCameraPosition,
+            target: streamingFocusPosition,
+          })
+        )
+      : createEmptyChunkStreamUpdate(currentCameraPosition)
+
+    if (shouldRunStreamUpdate) {
+      lastPostRenderStreamSyncMs = postRenderStreamStartMs
+    }
+
+    if (!streamUpdate.didChange) {
+      flushDeferredChunkRemeshes({
+        gpuDevice,
+        maxRemeshCount: 1,
+        onGpuSubmission: () =>
+          pfw.addProfileGpuStreamSubmissionWork(pendingProfileFrameWork, 1),
+        queue: deferredChunkRemeshQueue,
+        syncGpuChunkMeshes,
       })
-    )
+    }
+
     const postRenderStreamCpuTimeMs =
       performance.now() - postRenderStreamStartMs
     const preRenderCpuTimeMs = renderSubmitStartMs - frameStartMs

@@ -27,6 +27,8 @@ import { loadHdrEnvironment } from './loadHdrEnvironment.ts'
 import { loadVoxelTextureAtlas } from './loadVoxelTextureAtlas.ts'
 import type { VoxelMaterialLookUniforms } from './voxelLookMaterialUniforms.ts'
 
+const DEBUG_GPU_LIGHT_PROPAGATION_ITERATIONS = 4
+
 export type DebugWorldGpuRuntime = {
   disposeHdrEnvironment: () => void
   gpuChunkIndirectDrawCuller: GpuChunkIndirectDrawCuller
@@ -73,7 +75,9 @@ export async function createDebugWorldGpuRuntime(
     seed: 'kiseki',
   })
   const gpuSdfGenerator = new GpuSdfGenerator(gpuDevice)
-  const gpuLightGenerator = new GpuLightGenerator(gpuDevice)
+  const gpuLightGenerator = new GpuLightGenerator(gpuDevice, {
+    propagationIterations: DEBUG_GPU_LIGHT_PROPAGATION_ITERATIONS,
+  })
   const gpuSdfSlab = new GpuSdfSlab(
     options.renderer,
     options.maxRetainedChunkCount

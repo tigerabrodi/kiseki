@@ -26,19 +26,38 @@ export type GpuLightChunkInfo = {
   valueCount: number
 }
 
+type GpuLightGeneratorOptions = {
+  propagationIterations?: number
+}
+
 function getLightValue(values: Uint32Array, x: number, y: number, z: number) {
   return values[x + y * CHUNK_SIZE + z * CHUNK_SIZE * CHUNK_SIZE] ?? 0
 }
 
+function assertValidPropagationIterations(iterations: number): void {
+  if (!Number.isInteger(iterations) || iterations < 0 || iterations % 2 !== 0) {
+    throw new RangeError(
+      `GPU light propagation iterations must be a non-negative even integer, got ${iterations}`
+    )
+  }
+}
+
 export class GpuLightGenerator {
   private readonly device: GPUDevice
+  private readonly propagationIterations: number
   private readonly propagationBindGroupLayout: GPUBindGroupLayout
   private readonly propagationPipeline: GPUComputePipeline
   private readonly seedBindGroupLayout: GPUBindGroupLayout
   private readonly seedPipeline: GPUComputePipeline
 
-  constructor(device: GPUDevice) {
+  constructor(device: GPUDevice, options: GpuLightGeneratorOptions = {}) {
+    const propagationIterations =
+      options.propagationIterations ?? GPU_LIGHT_PROPAGATION_ITERATIONS
+
+    assertValidPropagationIterations(propagationIterations)
+
     this.device = device
+    this.propagationIterations = propagationIterations
     this.seedPipeline = device.createComputePipeline({
       compute: {
         entryPoint: 'main',
@@ -109,6 +128,10 @@ export class GpuLightGenerator {
 
   destroy(): void {}
 
+  getComputePassesPerChunk(): number {
+    return 1 + this.propagationIterations
+  }
+
   generateChunk(
     voxelHandle: GpuVoxelBufferHandle,
     lightHandle: GpuLightBufferHandle
@@ -162,7 +185,7 @@ export class GpuLightGenerator {
 
     for (
       let iteration = 0;
-      iteration < GPU_LIGHT_PROPAGATION_ITERATIONS;
+      iteration < this.propagationIterations;
       iteration += 1
     ) {
       const shouldReadPrimary = iteration % 2 === 0

@@ -28,9 +28,11 @@ type SyncStreamedGpuChunkMeshesOptions = {
   chunkMeshMap: Map<string, DisposableMesh>
   chunkMeshSlotMap: Map<number, DisposableMesh>
   encoder?: GPUCommandEncoder
+  extraRemeshChunkCoords?: Array<ChunkCoordinates>
   gpuVoxelCache: GpuChunkVoxelCache
   getLightSlotIndex?: (coords: ChunkCoordinates) => number | null
   getSdfSlotIndex?: (coords: ChunkCoordinates) => number | null
+  includeNeighborRemeshes?: boolean
   material: THREE.MeshStandardNodeMaterial
   update: Pick<ChunkStreamUpdate, 'loaded' | 'unloaded'>
   worldGroup: THREE.Group
@@ -65,6 +67,26 @@ function collectStreamAffectedChunkCoords(
   }
 
   return affected
+}
+
+function collectChangedChunkCoords(
+  update: Pick<ChunkStreamUpdate, 'loaded' | 'unloaded'>
+): Array<ChunkCoordinates> {
+  const keys = new Set<string>()
+  const changed: Array<ChunkCoordinates> = []
+
+  for (const entry of [...update.loaded, ...update.unloaded]) {
+    const key = chunkKey(entry.coords)
+
+    if (keys.has(key)) {
+      continue
+    }
+
+    keys.add(key)
+    changed.push(entry.coords)
+  }
+
+  return changed
 }
 
 function removeChunkRenderMesh(
@@ -156,23 +178,41 @@ export function syncStreamedGpuChunkMeshes(
     )
   }
 
-  const affectedChunkCoords = collectStreamAffectedChunkCoords(
-    options.update
-  ).filter((coords) => options.worldHasChunk(coords))
+  const remeshKeys = new Set<string>()
+  const remeshChunkCoords: Array<ChunkCoordinates> = []
+  const streamRemeshChunkCoords =
+    (options.includeNeighborRemeshes ?? true)
+      ? collectStreamAffectedChunkCoords(options.update)
+      : collectChangedChunkCoords(options.update)
+
+  for (const coords of [
+    ...streamRemeshChunkCoords,
+    ...(options.extraRemeshChunkCoords ?? []),
+  ]) {
+    const key = chunkKey(coords)
+
+    if (remeshKeys.has(key) || !options.worldHasChunk(coords)) {
+      continue
+    }
+
+    remeshKeys.add(key)
+    remeshChunkCoords.push(coords)
+  }
+
   const remeshedChunkCount =
     options.encoder === undefined
       ? remeshGpuChunksAtCoords(
           options.chunkMesher,
           options.chunkMeshCache,
           options.gpuVoxelCache,
-          affectedChunkCoords
+          remeshChunkCoords
         )
       : encodeRemeshGpuChunksAtCoords(
           options.encoder,
           options.chunkMesher,
           options.chunkMeshCache,
           options.gpuVoxelCache,
-          affectedChunkCoords
+          remeshChunkCoords
         )
 
   options.worldGroup.updateMatrixWorld(true)
