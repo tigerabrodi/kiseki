@@ -6,6 +6,24 @@ import {
 } from './voxelLookSettings.ts'
 
 describe('voxelLookSettings', () => {
+  it('uses the tuned outdoor look as the default preset', () => {
+    expect(getVoxelLookPresetSettings('naturalOutdoor')).toEqual({
+      ambientOcclusionStrength: 0.82,
+      backgroundIntensity: 0.88,
+      environmentIntensity: 0.88,
+      exposure: 1,
+      fillIntensity: 0.55,
+      fogColor: '#94a1aa',
+      fogDensity: 0.005,
+      materialBrightness: 1.22,
+      materialSaturation: 0.98,
+      sdfShadowStrength: 0.51,
+      skyAmbientIntensity: 0.5,
+      sunIntensity: 1.7,
+      voxelLightStrength: 0.62,
+    })
+  })
+
   it('returns independent preset settings copies', () => {
     const first = getVoxelLookPresetSettings('naturalOutdoor')
     const second = getVoxelLookPresetSettings('naturalOutdoor')
