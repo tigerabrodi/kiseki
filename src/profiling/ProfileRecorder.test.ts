@@ -63,6 +63,8 @@ describe('ProfileRecorder', () => {
       frameTimeMs: 16,
       fps: 60,
       gpuMemoryBytes: 4096,
+      gpuStreamComputePassCount: 8,
+      gpuStreamSubmissionCount: 2,
       gpuTimeMs: null,
       jsHeapBytes: 2048,
       nearestChunkBoundaryDistance: 1,
@@ -95,6 +97,8 @@ describe('ProfileRecorder', () => {
       frameTimeMs: 20,
       fps: 50,
       gpuMemoryBytes: 6144,
+      gpuStreamComputePassCount: 16,
+      gpuStreamSubmissionCount: 4,
       gpuTimeMs: null,
       jsHeapBytes: 3072,
       nearestChunkBoundaryDistance: 2,
@@ -139,6 +143,18 @@ describe('ProfileRecorder', () => {
         average: 0,
         max: 0,
         min: 0,
+        samples: 2,
+      },
+      gpuStreamComputePassCount: {
+        average: 12,
+        max: 16,
+        min: 8,
+        samples: 2,
+      },
+      gpuStreamSubmissionCount: {
+        average: 3,
+        max: 4,
+        min: 2,
         samples: 2,
       },
       unaccountedFrameTimeMs: {
@@ -386,6 +402,8 @@ describe('ProfileRecorder', () => {
     expect(report?.lightGenerationChunkCount.average).toBe(0)
     expect(report?.lightGenerationPerChunkMs.average).toBe(0)
     expect(report?.lightGenerationTimeMs.total).toBe(0)
+    expect(report?.gpuStreamComputePassCount.average).toBe(0)
+    expect(report?.gpuStreamSubmissionCount.average).toBe(0)
     expect(report?.terrainGenerationChunkCount.average).toBe(0)
     expect(report?.terrainGenerationPerChunkMs.average).toBe(0)
     expect(report?.terrainGenerationTimeMs.total).toBe(0)
@@ -458,6 +476,12 @@ describe('ProfileRecorder', () => {
       'Previous post-stream CPU ms avg/max'
     )
     expect(formatProfileReport(report!)).toContain(
+      'Stream GPU submits avg/min/max'
+    )
+    expect(formatProfileReport(report!)).toContain(
+      'Stream compute passes avg/min/max'
+    )
+    expect(formatProfileReport(report!)).toContain(
       'Stream pending loads avg/min/max'
     )
     expect(formatProfileReport(report!)).toContain(
@@ -505,6 +529,8 @@ describe('ProfileRecorder', () => {
         fixedStepCount: frameIndex,
         fps: 100 - frameIndex,
         gpuMemoryBytes: 1024,
+        gpuStreamComputePassCount: frameIndex + 20,
+        gpuStreamSubmissionCount: frameIndex + 2,
         gpuTimeMs: frameIndex === 6 ? 4 : null,
         jsHeapBytes: 2048 + frameIndex,
         lightGeneratedChunkCount: frameIndex + 3,
@@ -544,6 +570,8 @@ describe('ProfileRecorder', () => {
       drawCalls: 16,
       elapsedSeconds: 6,
       fixedStepCount: 6,
+      gpuStreamComputePassCount: 26,
+      gpuStreamSubmissionCount: 8,
       gpuTimeMs: 4,
       lightGeneratedChunkCount: 9,
       meshRebuiltChunkCount: 10,

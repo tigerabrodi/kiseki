@@ -1,7 +1,10 @@
 import * as THREE from 'three/webgpu'
 
 import type { GpuChunkMeshCache } from '../gpu/GpuChunkMeshCache.ts'
-import { GpuChunkMesher } from '../gpu/GpuChunkMesher.ts'
+import {
+  GPU_CHUNK_MESH_COMPUTE_PASSES_PER_CHUNK,
+  GpuChunkMesher,
+} from '../gpu/GpuChunkMesher.ts'
 import type { GpuChunkVoxelCache } from '../gpu/GpuChunkVoxelCache.ts'
 import { remeshGpuChunksAtCoords } from '../gpu/remeshGpuChunkAtCoords.ts'
 import type { ChunkStreamUpdate } from '../world/ChunkStreamer.ts'
@@ -32,6 +35,8 @@ type SyncStreamedGpuChunkMeshesOptions = {
 
 export type SyncStreamedGpuChunkMeshesResult = {
   chunkMeshes: Array<DisposableMesh>
+  gpuComputePassCount: number
+  gpuSubmissionCount: number
   meshGenerationTimeMs: number
   remeshedChunkCount: number
 }
@@ -160,6 +165,9 @@ export function syncStreamedGpuChunkMeshes(
 
   return {
     chunkMeshes: [...options.chunkMeshMap.values()],
+    gpuComputePassCount:
+      remeshedChunkCount * GPU_CHUNK_MESH_COMPUTE_PASSES_PER_CHUNK,
+    gpuSubmissionCount: remeshedChunkCount > 0 ? 1 : 0,
     meshGenerationTimeMs: performance.now() - rebuildStartMs,
     remeshedChunkCount,
   }

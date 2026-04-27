@@ -26,6 +26,7 @@ const FACE_DIRECTIONS = [
   'pz',
   'nz',
 ] as const satisfies ReadonlyArray<ChunkFaceDirection>
+export const GPU_CHUNK_MESH_COMPUTE_PASSES_PER_CHUNK = FACE_DIRECTIONS.length
 const MESHER_PARAM_WORD_COUNT = 4
 const INDEX_COUNT_BYTE_OFFSET = Uint32Array.BYTES_PER_ELEMENT * 2
 

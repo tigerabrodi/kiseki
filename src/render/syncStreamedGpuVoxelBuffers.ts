@@ -10,6 +10,8 @@ type SyncStreamedGpuVoxelBuffersOptions = {
 
 export type SyncStreamedGpuVoxelBuffersResult = {
   generatedChunkCount: number
+  gpuComputePassCount: number
+  gpuSubmissionCount: number
   terrainGenerationTimeMs: number
 }
 
@@ -23,6 +25,8 @@ export function syncStreamedGpuVoxelBuffers(
   if (options.gpuTerrainGenerator === null || options.gpuVoxelCache === null) {
     return {
       generatedChunkCount: 0,
+      gpuComputePassCount: 0,
+      gpuSubmissionCount: 0,
       terrainGenerationTimeMs: 0,
     }
   }
@@ -37,6 +41,8 @@ export function syncStreamedGpuVoxelBuffers(
 
   return {
     generatedChunkCount: options.update.loaded.length,
+    gpuComputePassCount: options.update.loaded.length,
+    gpuSubmissionCount: options.update.loaded.length,
     terrainGenerationTimeMs: performance.now() - terrainGenerationStartMs,
   }
 }

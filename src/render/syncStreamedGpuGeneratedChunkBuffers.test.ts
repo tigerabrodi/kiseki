@@ -76,6 +76,7 @@ describe('syncStreamedGpuGeneratedChunkBuffers', () => {
     const calls: Array<string> = []
 
     const result = syncStreamedGpuGeneratedChunkBuffers({
+      computePassesPerGeneratedChunk: 7,
       gpuGeneratedCache: {
         getBuffer: (coords) => generated.get(chunkKey(coords)),
         sync: (update) => {
@@ -101,6 +102,8 @@ describe('syncStreamedGpuGeneratedChunkBuffers', () => {
 
     expect(result.generatedChunkCount).toBe(1)
     expect(result.generationTimeMs).toBeGreaterThanOrEqual(0)
+    expect(result.gpuComputePassCount).toBe(7)
+    expect(result.gpuSubmissionCount).toBe(1)
     expect(calls).toEqual(['voxel-1:generated-1'])
   })
 })

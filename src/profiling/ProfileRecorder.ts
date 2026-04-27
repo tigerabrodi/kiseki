@@ -11,6 +11,8 @@ export type ProfileFrameSample = {
   fixedStepCount?: number
   fps: number
   gpuMemoryBytes: number
+  gpuStreamComputePassCount?: number
+  gpuStreamSubmissionCount?: number
   gpuTimeMs: number | null
   jsHeapBytes: number | null
   lightGeneratedChunkCount?: number
@@ -106,6 +108,8 @@ export type ProfileSlowFrameSample = {
   fps: number
   frameTimeMs: number
   fixedStepCount: number
+  gpuStreamComputePassCount: number
+  gpuStreamSubmissionCount: number
   gpuTimeMs: number | null
   jsHeapBytes: number | null
   lightGeneratedChunkCount: number
@@ -142,6 +146,8 @@ export type ProfileReport = {
   frameTimeMs: ProfileMetricSummary
   fixedStepCount: ProfileMetricSummary
   gpuTimeMs: ProfileMetricSummary | null
+  gpuStreamComputePassCount: ProfileMetricSummary
+  gpuStreamSubmissionCount: ProfileMetricSummary
   indirectDraw: ProfileIndirectDrawSummary | null
   lightGenerationChunkCount: ProfileMetricSummary
   lightGenerationPerChunkMs: ProfileMetricSummary
@@ -300,6 +306,8 @@ function createSlowFrameSample(
     fps: sample.fps,
     frameTimeMs: sample.frameTimeMs,
     fixedStepCount: sample.fixedStepCount ?? 0,
+    gpuStreamComputePassCount: sample.gpuStreamComputePassCount ?? 0,
+    gpuStreamSubmissionCount: sample.gpuStreamSubmissionCount ?? 0,
     gpuTimeMs: sample.gpuTimeMs,
     jsHeapBytes: sample.jsHeapBytes,
     lightGeneratedChunkCount: sample.lightGeneratedChunkCount ?? 0,
@@ -367,6 +375,8 @@ export class ProfileRecorder {
   private readonly fixedStepCount = new MetricAccumulator()
   private readonly fps = new MetricAccumulator()
   private readonly gpuMemoryBytes = new MetricAccumulator()
+  private readonly gpuStreamComputePassCount = new MetricAccumulator()
+  private readonly gpuStreamSubmissionCount = new MetricAccumulator()
   private readonly gpuTimeMs = new MetricAccumulator()
   private readonly indirectActiveDrawCount = new MetricAccumulator()
   private readonly indirectCommandCount = new MetricAccumulator()
@@ -431,6 +441,8 @@ export class ProfileRecorder {
     this.fixedStepCount.add(sample.fixedStepCount ?? 0)
     this.fps.add(sample.fps)
     this.gpuMemoryBytes.add(sample.gpuMemoryBytes)
+    this.gpuStreamComputePassCount.add(sample.gpuStreamComputePassCount ?? 0)
+    this.gpuStreamSubmissionCount.add(sample.gpuStreamSubmissionCount ?? 0)
     this.postRenderStreamCpuTimeMs.add(sample.postRenderStreamCpuTimeMs ?? 0)
     this.preRenderCpuTimeMs.add(sample.preRenderCpuTimeMs ?? 0)
     this.previousPostRenderStreamCpuTimeMs.add(
@@ -578,6 +590,8 @@ export class ProfileRecorder {
         this.gpuTimeMs.summary().samples === 0
           ? null
           : this.gpuTimeMs.summary(),
+      gpuStreamComputePassCount: this.gpuStreamComputePassCount.summary(),
+      gpuStreamSubmissionCount: this.gpuStreamSubmissionCount.summary(),
       indirectDraw:
         this.indirectCommandCount.summary().samples === 0
           ? null
@@ -675,6 +689,8 @@ export class ProfileRecorder {
     this.fixedStepCount.reset()
     this.fps.reset()
     this.gpuMemoryBytes.reset()
+    this.gpuStreamComputePassCount.reset()
+    this.gpuStreamSubmissionCount.reset()
     this.gpuTimeMs.reset()
     this.indirectActiveDrawCount.reset()
     this.indirectCommandCount.reset()

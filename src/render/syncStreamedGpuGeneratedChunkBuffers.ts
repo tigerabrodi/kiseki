@@ -22,6 +22,7 @@ type RegenerateGpuGeneratedChunkBuffersOptions<Handle> = {
 }
 
 type SyncStreamedGpuGeneratedChunkBuffersOptions<Handle> = {
+  computePassesPerGeneratedChunk: number
   gpuGeneratedCache: GeneratedChunkBufferCache<Handle> | null
   gpuGenerator: GeneratedChunkBufferGenerator<Handle> | null
   gpuVoxelCache: Pick<GpuChunkVoxelCache, 'getBuffer'> | null
@@ -31,6 +32,8 @@ type SyncStreamedGpuGeneratedChunkBuffersOptions<Handle> = {
 export type SyncStreamedGpuGeneratedChunkBuffersResult = {
   generatedChunkCount: number
   generationTimeMs: number
+  gpuComputePassCount: number
+  gpuSubmissionCount: number
 }
 
 export function regenerateGpuGeneratedChunkBuffers<Handle>(
@@ -79,5 +82,8 @@ export function syncStreamedGpuGeneratedChunkBuffers<Handle>(
   return {
     generatedChunkCount,
     generationTimeMs: performance.now() - generationStartMs,
+    gpuComputePassCount:
+      generatedChunkCount * options.computePassesPerGeneratedChunk,
+    gpuSubmissionCount: generatedChunkCount,
   }
 }

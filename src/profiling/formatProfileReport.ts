@@ -23,6 +23,8 @@ export function formatProfileReport(report: ProfileReport): string {
     `Fixed steps avg/min/max: ${formatMetric(report.fixedStepCount, 1)}`,
     `CPU phase ms pre/render/post-stream avg/max: ${formatMetricAverageMax(report.preRenderCpuTimeMs)} / ${formatMetricAverageMax(report.renderSubmitCpuTimeMs)} / ${formatMetricAverageMax(report.postRenderStreamCpuTimeMs)}`,
     `Previous post-stream CPU ms avg/max: ${formatMetricAverageMax(report.previousPostRenderStreamCpuTimeMs)}`,
+    `Stream GPU submits avg/min/max: ${formatMetric(report.gpuStreamSubmissionCount, 1)}`,
+    `Stream compute passes avg/min/max: ${formatMetric(report.gpuStreamComputePassCount, 1)}`,
     `Stream pending loads avg/min/max: ${
       report.pendingStreamLoadCount === null
         ? 'Unavailable'
@@ -167,8 +169,9 @@ function formatSlowFrames(
       const generationTimes = `${frame.terrainGenerationTimeMs.toFixed(2)}/${frame.sdfGenerationTimeMs.toFixed(2)}/${frame.lightGenerationTimeMs.toFixed(2)}/${frame.meshGenerationTimeMs.toFixed(2)} ms`
       const phaseTimes = `${frame.preRenderCpuTimeMs.toFixed(2)}/${frame.renderSubmitCpuTimeMs.toFixed(2)}/${frame.postRenderStreamCpuTimeMs.toFixed(2)} ms`
       const previousPostStream = `+${frame.previousPostRenderStreamedInChunkCount}/-${frame.previousPostRenderStreamedOutChunkCount} ${frame.previousPostRenderStreamCpuTimeMs.toFixed(2)} ms`
+      const gpuStreamWork = `${frame.gpuStreamSubmissionCount} submits, ${frame.gpuStreamComputePassCount} passes`
 
-      return `Worst frame ${index + 1}: ${frame.frameTimeMs.toFixed(2)} ms @ ${frame.elapsedSeconds.toFixed(1)}s (${frame.fps.toFixed(2)} FPS), CPU ${frame.cpuTimeMs.toFixed(2)} ms, GPU ${formatNullableMetric(frame.gpuTimeMs)} ms, unaccounted ${frame.unaccountedFrameTimeMs.toFixed(2)} ms, fixed steps ${frame.fixedStepCount}, phase pre/render/post-stream ${phaseTimes}, prev post-stream ${previousPostStream}, chunks ${frame.chunkCount}/${formatNullableNumber(frame.visibleChunkCount)} visible, pending loads ${formatNullableNumber(frame.pendingStreamLoadCount)}, triangles ${frame.triangleCount}, draws ${formatNullableNumber(frame.drawCalls)}, stream +${frame.streamedInChunkCount}/-${frame.streamedOutChunkCount}, gen T/SDF/L/M ${generationCounts}, gen ms T/SDF/L/M ${generationTimes}, heap ${formatNullableBytes(frame.jsHeapBytes)}, pos ${formatVector3(frame.position)}, chunk ${formatVector3(frame.playerChunk)}, local ${formatVector3(frame.chunkLocalPosition)}, nearest boundary ${formatNullableMetricValue(frame.nearestChunkBoundaryDistance)}`
+      return `Worst frame ${index + 1}: ${frame.frameTimeMs.toFixed(2)} ms @ ${frame.elapsedSeconds.toFixed(1)}s (${frame.fps.toFixed(2)} FPS), CPU ${frame.cpuTimeMs.toFixed(2)} ms, GPU ${formatNullableMetric(frame.gpuTimeMs)} ms, unaccounted ${frame.unaccountedFrameTimeMs.toFixed(2)} ms, fixed steps ${frame.fixedStepCount}, phase pre/render/post-stream ${phaseTimes}, prev post-stream ${previousPostStream}, gpu stream ${gpuStreamWork}, chunks ${frame.chunkCount}/${formatNullableNumber(frame.visibleChunkCount)} visible, pending loads ${formatNullableNumber(frame.pendingStreamLoadCount)}, triangles ${frame.triangleCount}, draws ${formatNullableNumber(frame.drawCalls)}, stream +${frame.streamedInChunkCount}/-${frame.streamedOutChunkCount}, gen T/SDF/L/M ${generationCounts}, gen ms T/SDF/L/M ${generationTimes}, heap ${formatNullableBytes(frame.jsHeapBytes)}, pos ${formatVector3(frame.position)}, chunk ${formatVector3(frame.playerChunk)}, local ${formatVector3(frame.chunkLocalPosition)}, nearest boundary ${formatNullableMetricValue(frame.nearestChunkBoundaryDistance)}`
     }),
   ]
 }

@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest'
 import type { KisekiDebugStats } from '../debug/installKisekiDebugSurface.ts'
 import { ProfileRecorder } from '../profiling/ProfileRecorder.ts'
 import {
+  addProfileLightWork,
+  addProfileMeshWork,
+  addProfileTerrainWork,
   createProfileFrameWork,
   recordProfileFrame,
 } from './profileFrameWork.ts'
@@ -38,12 +41,32 @@ function createStats(position: {
 describe('recordProfileFrame', () => {
   it('records chunk-boundary and post-render streaming context', () => {
     const recorder = new ProfileRecorder()
+    const frameWork = createProfileFrameWork()
+
+    addProfileTerrainWork(frameWork, {
+      generatedChunkCount: 1,
+      gpuComputePassCount: 1,
+      gpuSubmissionCount: 1,
+      terrainGenerationTimeMs: 0.1,
+    })
+    addProfileLightWork(frameWork, {
+      generatedChunkCount: 1,
+      gpuComputePassCount: 17,
+      gpuSubmissionCount: 1,
+      lightGenerationTimeMs: 0.2,
+    })
+    addProfileMeshWork(frameWork, {
+      gpuComputePassCount: 24,
+      gpuSubmissionCount: 1,
+      meshGenerationTimeMs: 0.3,
+      remeshedChunkCount: 4,
+    })
 
     recorder.start(0)
     recordProfileFrame({
       fixedStepCount: 1,
       frameTimeSeconds: 1 / 60,
-      frameWork: createProfileFrameWork(),
+      frameWork,
       gpuMemoryBytes: 4096,
       gpuTimeMs: 1,
       pendingStreamLoadCount: 3,
@@ -61,8 +84,12 @@ describe('recordProfileFrame', () => {
 
     expect(report?.pendingStreamLoadCount?.average).toBe(3)
     expect(report?.nearestChunkBoundaryDistance?.average).toBe(0.25)
+    expect(report?.gpuStreamComputePassCount.average).toBe(42)
+    expect(report?.gpuStreamSubmissionCount.average).toBe(3)
     expect(report?.slowFrames[0]).toMatchObject({
       chunkLocalPosition: { x: 31.5, y: 1, z: 0.25 },
+      gpuStreamComputePassCount: 42,
+      gpuStreamSubmissionCount: 3,
       nearestChunkBoundaryDistance: 0.25,
       pendingStreamLoadCount: 3,
       postRenderStreamCpuTimeMs: 0.25,

@@ -1,6 +1,7 @@
 import type { GpuChunkLightCache } from '../gpu/GpuChunkLightCache.ts'
 import type { GpuChunkVoxelCache } from '../gpu/GpuChunkVoxelCache.ts'
 import type { GpuLightGenerator } from '../gpu/GpuLightGenerator.ts'
+import { GPU_LIGHT_PROPAGATION_ITERATIONS } from '../gpu/lightStorageCodec.ts'
 import type { ChunkStreamUpdate } from '../world/ChunkStreamer.ts'
 import type { ChunkCoordinates } from '../world/World.ts'
 import {
@@ -17,6 +18,8 @@ type SyncStreamedGpuLightBuffersOptions = {
 
 export type SyncStreamedGpuLightBuffersResult = {
   generatedChunkCount: number
+  gpuComputePassCount: number
+  gpuSubmissionCount: number
   lightGenerationTimeMs: number
 }
 
@@ -38,6 +41,7 @@ export function syncStreamedGpuLightBuffers(
   options: SyncStreamedGpuLightBuffersOptions
 ): SyncStreamedGpuLightBuffersResult {
   const result = syncStreamedGpuGeneratedChunkBuffers({
+    computePassesPerGeneratedChunk: 1 + GPU_LIGHT_PROPAGATION_ITERATIONS,
     gpuGeneratedCache: options.gpuLightCache,
     gpuGenerator: options.gpuLightGenerator,
     gpuVoxelCache: options.gpuVoxelCache,
@@ -46,6 +50,8 @@ export function syncStreamedGpuLightBuffers(
 
   return {
     generatedChunkCount: result.generatedChunkCount,
+    gpuComputePassCount: result.gpuComputePassCount,
+    gpuSubmissionCount: result.gpuSubmissionCount,
     lightGenerationTimeMs: result.generationTimeMs,
   }
 }

@@ -8,6 +8,8 @@ import { CHUNK_SIZE } from '../voxel/chunk.ts'
 import { getJsHeapBytes } from './debugWorldHelpers.ts'
 
 type ProfileFrameWork = {
+  gpuComputePassCount: number
+  gpuSubmissionCount: number
   lightGeneratedChunkCount: number
   lightGenerationTimeMs: number
   meshGenerationTimeMs: number
@@ -39,6 +41,8 @@ type ProfileFrameRecordOptions = {
 
 export function createProfileFrameWork(): ProfileFrameWork {
   return {
+    gpuComputePassCount: 0,
+    gpuSubmissionCount: 0,
     lightGeneratedChunkCount: 0,
     lightGenerationTimeMs: 0,
     meshGenerationTimeMs: 0,
@@ -62,32 +66,60 @@ export function addProfileStreamWork(
 
 export function addProfileTerrainWork(
   frameWork: ProfileFrameWork,
-  result: { generatedChunkCount: number; terrainGenerationTimeMs: number }
+  result: {
+    generatedChunkCount: number
+    gpuComputePassCount: number
+    gpuSubmissionCount: number
+    terrainGenerationTimeMs: number
+  }
 ): void {
+  frameWork.gpuComputePassCount += result.gpuComputePassCount
+  frameWork.gpuSubmissionCount += result.gpuSubmissionCount
   frameWork.terrainGeneratedChunkCount += result.generatedChunkCount
   frameWork.terrainGenerationTimeMs += result.terrainGenerationTimeMs
 }
 
 export function addProfileSdfWork(
   frameWork: ProfileFrameWork,
-  result: { generatedChunkCount: number; sdfGenerationTimeMs: number }
+  result: {
+    generatedChunkCount: number
+    gpuComputePassCount: number
+    gpuSubmissionCount: number
+    sdfGenerationTimeMs: number
+  }
 ): void {
+  frameWork.gpuComputePassCount += result.gpuComputePassCount
+  frameWork.gpuSubmissionCount += result.gpuSubmissionCount
   frameWork.sdfGeneratedChunkCount += result.generatedChunkCount
   frameWork.sdfGenerationTimeMs += result.sdfGenerationTimeMs
 }
 
 export function addProfileLightWork(
   frameWork: ProfileFrameWork,
-  result: { generatedChunkCount: number; lightGenerationTimeMs: number }
+  result: {
+    generatedChunkCount: number
+    gpuComputePassCount: number
+    gpuSubmissionCount: number
+    lightGenerationTimeMs: number
+  }
 ): void {
+  frameWork.gpuComputePassCount += result.gpuComputePassCount
+  frameWork.gpuSubmissionCount += result.gpuSubmissionCount
   frameWork.lightGeneratedChunkCount += result.generatedChunkCount
   frameWork.lightGenerationTimeMs += result.lightGenerationTimeMs
 }
 
 export function addProfileMeshWork(
   frameWork: ProfileFrameWork,
-  result: { meshGenerationTimeMs: number; remeshedChunkCount: number }
+  result: {
+    gpuComputePassCount: number
+    gpuSubmissionCount: number
+    meshGenerationTimeMs: number
+    remeshedChunkCount: number
+  }
 ): void {
+  frameWork.gpuComputePassCount += result.gpuComputePassCount
+  frameWork.gpuSubmissionCount += result.gpuSubmissionCount
   frameWork.meshGenerationTimeMs += result.meshGenerationTimeMs
   frameWork.meshRebuiltChunkCount += result.remeshedChunkCount
 }
@@ -138,6 +170,8 @@ export function recordProfileFrame(
     frameTimeMs,
     fps: 1 / options.frameTimeSeconds,
     gpuMemoryBytes: options.gpuMemoryBytes,
+    gpuStreamComputePassCount: options.frameWork.gpuComputePassCount,
+    gpuStreamSubmissionCount: options.frameWork.gpuSubmissionCount,
     gpuTimeMs: options.gpuTimeMs,
     jsHeapBytes: getJsHeapBytes(),
     lightGeneratedChunkCount: options.frameWork.lightGeneratedChunkCount,

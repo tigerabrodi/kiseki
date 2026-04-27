@@ -17,6 +17,8 @@ type SyncStreamedGpuSdfBuffersOptions = {
 
 export type SyncStreamedGpuSdfBuffersResult = {
   generatedChunkCount: number
+  gpuComputePassCount: number
+  gpuSubmissionCount: number
   sdfGenerationTimeMs: number
 }
 
@@ -38,6 +40,7 @@ export function syncStreamedGpuSdfBuffers(
   options: SyncStreamedGpuSdfBuffersOptions
 ): SyncStreamedGpuSdfBuffersResult {
   const result = syncStreamedGpuGeneratedChunkBuffers({
+    computePassesPerGeneratedChunk: 1,
     gpuGeneratedCache: options.gpuSdfCache,
     gpuGenerator: options.gpuSdfGenerator,
     gpuVoxelCache: options.gpuVoxelCache,
@@ -46,6 +49,8 @@ export function syncStreamedGpuSdfBuffers(
 
   return {
     generatedChunkCount: result.generatedChunkCount,
+    gpuComputePassCount: result.gpuComputePassCount,
+    gpuSubmissionCount: result.gpuSubmissionCount,
     sdfGenerationTimeMs: result.generationTimeMs,
   }
 }
